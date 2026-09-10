@@ -1,15 +1,15 @@
 using System.Collections.Concurrent;
 using System.Numerics;
-using DiepClone.Server.Combat;
-using DiepClone.Server.Entities;
-using DiepClone.Shared;
+using DeepIo.Server.Combat;
+using DeepIo.Server.Entities;
+using DeepIo.Shared;
 
-namespace DiepClone.Server.World;
+namespace DeepIo.Server.World;
 
 /// <summary>
 /// The authoritative simulation and single entity registry.
 ///
-/// Threading model (plan §3.1): the SignalR hub touches this from background threads only
+/// Threading model: SignalR hub touches this from background threads only
 /// through the concurrent queues (join / leave / input). ALL mutation of the entity
 /// dictionary happens on the game-loop thread inside <see cref="Update"/>, so no locks are
 /// needed on the hot path. This is registered as a DI singleton today; Student A formalises

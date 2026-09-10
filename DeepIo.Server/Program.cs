@@ -1,5 +1,5 @@
-using DiepClone.Server.Net;
-using DiepClone.Server.World;
+using DeepIo.Server.Net;
+using DeepIo.Server.World;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,7 +9,7 @@ builder.Services.AddHostedService<GameLoop>();    // authoritative 25 Hz tick lo
 
 var app = builder.Build();
 
-app.MapGet("/", () => "DiepClone server is running. Connect a client to the /game hub.");
+app.MapGet("/", () => "deep.io server is running. Connect a client to the /game hub.");
 app.MapHub<GameHub>("/game");
 
 // Bind on all interfaces so a second machine on the LAN can join for the multiplayer demo.

@@ -1,9 +1,9 @@
-namespace DiepClone.Shared;
+namespace DeepIo.Shared;
 
 /// <summary>
 /// One entity as it appears in a snapshot. A single flat DTO covers tanks, shapes and
 /// bullets; unused fields stay at their defaults. Field names are kept terse because
-/// snapshots are the bandwidth hot path (plan §6).
+/// snapshots are bandwidth hot path.
 /// </summary>
 public sealed record EntityDto
 {
@@ -41,7 +41,7 @@ public sealed record LeaderboardEntry
 
 /// <summary>
 /// Server -> Client. The authoritative world state broadcast every tick.
-/// (Prototype: one global snapshot for everyone. Viewport culling comes next — plan §6.)
+/// (Prototype: one global snapshot for everyone. Viewport culling comes next.)
 /// </summary>
 public sealed record Snapshot
 {

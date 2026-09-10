@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace DiepClone.Server.Entities;
+namespace DeepIo.Server.Entities;
 
 /// <summary>A player-controlled tank. One per connected client.</summary>
 public sealed class Tank : Entity

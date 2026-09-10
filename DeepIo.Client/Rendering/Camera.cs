@@ -1,10 +1,10 @@
 using System.Numerics;
 
-namespace DiepClone.Client.Rendering;
+namespace DeepIo.Client.Rendering;
 
 /// <summary>
 /// Hand-rolled world->screen transform. raylib's Camera2D / BeginMode2D / GetScreenToWorld2D
-/// are deliberately NOT used (plan §3.1) — implementing the camera ourselves is part of the
+/// are deliberately not used — camera is implemented in this project.
 /// assignment. ~15 lines of maths.
 /// </summary>
 public sealed class Camera

@@ -1,8 +1,8 @@
-using DiepClone.Server.World;
-using DiepClone.Shared;
+using DeepIo.Server.World;
+using DeepIo.Shared;
 using Microsoft.AspNetCore.SignalR;
 
-namespace DiepClone.Server.Net;
+namespace DeepIo.Server.Net;
 
 /// <summary>
 /// The SignalR endpoint clients talk to. Deliberately thin: it just forwards requests into

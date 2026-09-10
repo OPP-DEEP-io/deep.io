@@ -1,13 +1,13 @@
 using System.Collections.Concurrent;
-using DiepClone.Shared;
+using DeepIo.Shared;
 using Microsoft.AspNetCore.SignalR.Client;
 
-namespace DiepClone.Client.Net;
+namespace DeepIo.Client.Net;
 
 /// <summary>
 /// Wraps the SignalR connection to the server.
 ///
-/// Thread-safety note (plan §3.1): SignalR raises "Snapshot" on a background thread, but
+/// SignalR raises "Snapshot" on a background thread, but
 /// raylib is single-threaded and must only be called from the main thread. So snapshots are
 /// pushed into a ConcurrentQueue here and drained by the render loop via <see cref="TakeLatest"/>.
 /// We never draw from inside a SignalR callback.
@@ -37,7 +37,7 @@ public sealed class NetworkClient : IAsyncDisposable
     /// <summary>
     /// Returns the most recent snapshot and discards any older ones queued behind it.
     /// (Prototype: render the newest state directly. An interpolation buffer that keeps the
-    /// last two snapshots is the documented next step — plan §6.)
+    /// last two snapshots is next step.)
     /// </summary>
     public Snapshot? TakeLatest()
     {

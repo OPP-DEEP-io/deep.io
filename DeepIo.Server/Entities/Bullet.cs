@@ -1,4 +1,4 @@
-namespace DiepClone.Server.Entities;
+namespace DeepIo.Server.Entities;
 
 /// <summary>A projectile fired by a tank.</summary>
 public sealed class Bullet : Entity

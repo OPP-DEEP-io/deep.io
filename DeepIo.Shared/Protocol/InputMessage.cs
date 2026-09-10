@@ -1,8 +1,8 @@
-namespace DiepClone.Shared;
+namespace DeepIo.Shared;
 
 /// <summary>
 /// Client -> Server. Player intent for one tick. Sent ~30x/second.
-/// Matches the plan's networking contract: { moveX, moveY, aimAngle, firing }.
+/// Networking input: { moveX, moveY, aimAngle, firing }.
 /// </summary>
 public sealed record InputMessage
 {

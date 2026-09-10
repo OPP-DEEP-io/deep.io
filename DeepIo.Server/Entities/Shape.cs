@@ -1,6 +1,6 @@
-using DiepClone.Shared;
+using DeepIo.Shared;
 
-namespace DiepClone.Server.Entities;
+namespace DeepIo.Server.Entities;
 
 /// <summary>A passive polygon worth XP when destroyed.</summary>
 public sealed class Shape : Entity

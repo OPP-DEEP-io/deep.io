@@ -1,8 +1,8 @@
 using System.Numerics;
-using DiepClone.Shared;
+using DeepIo.Shared;
 using Raylib_cs;
 
-namespace DiepClone.Client.Rendering;
+namespace DeepIo.Client.Rendering;
 
 /// <summary>
 /// Draws a snapshot using only raylib's primitive-drawing API (the allowed subset in §3.1:

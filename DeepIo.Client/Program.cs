@@ -1,11 +1,11 @@
 using System.Numerics;
-using DiepClone.Client.Net;
-using DiepClone.Client.Rendering;
-using DiepClone.Shared;
+using DeepIo.Client.Net;
+using DeepIo.Client.Rendering;
+using DeepIo.Shared;
 using Raylib_cs;
 
 // ---- Configuration -------------------------------------------------------------------
-// Usage: dotnet run --project DiepClone.Client -- [name] [serverUrl]
+// Usage: dotnet run --project DeepIo.Client -- [name] [serverUrl]
 const int screenW = 1280;
 const int screenH = 720;
 
@@ -17,8 +17,8 @@ string serverUrl  = args.Length > 1 ? args[1] : "http://localhost:5000/game";
 // Main synchronous — no `await` on the main path — because the first `await` in a console
 // app resumes on a thread-pool thread, which would move the render loop off the main thread
 // and leave the window unresponsive. All networking is pushed onto a background task below.
-Raylib.SetTraceLogLevel(TraceLogLevel.Warning);   // silence raylib startup spam (plan §3.1)
-Raylib.InitWindow(screenW, screenH, "DiepClone — Prototype");
+Raylib.SetTraceLogLevel(TraceLogLevel.Warning);   // silence raylib startup spam
+Raylib.InitWindow(screenW, screenH, "deep.io");
 Raylib.SetTargetFPS(60);
 
 var net = new NetworkClient(serverUrl);
@@ -43,7 +43,7 @@ _ = Task.Run(async () =>
     catch (Exception ex)
     {
         Console.WriteLine($"Could not connect to {serverUrl}: {ex.Message}");
-        Console.WriteLine("Start DiepClone.Server first; the client will keep showing 'Connecting...'.");
+        Console.WriteLine("Start DeepIo.Server first; the client will keep showing 'Connecting...'.");
     }
 });
 
@@ -51,7 +51,7 @@ Snapshot? snapshot = null;
 Vector2 myPos = Vector2.Zero;
 int seq = 0;
 float inputTimer = 0f;
-const float inputInterval = 1f / 30f;   // send intent ~30x/second (plan §6)
+const float inputInterval = 1f / 30f;   // send intent ~30x/second
 
 // ---- Main loop (fully synchronous — stays on the main thread) -------------------------
 while (!Raylib.WindowShouldClose())

@@ -1,4 +1,4 @@
-namespace DiepClone.Shared;
+namespace DeepIo.Shared;
 
 /// <summary>
 /// Tunable simulation constants shared by server (authoritative) and client (rendering).

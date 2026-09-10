@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
-  <!-- Authoritative simulation + SignalR. MUST stay headless: no Raylib-cs reference,
-       ever (plan §3.1) so CI, bots and load tests can run without a display. -->
-  <ItemGroup>
-    <ProjectReference Include="..\DiepClone.Shared\DiepClone.Shared.csproj" />
-  </ItemGroup>
-</Project>

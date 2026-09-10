@@ -1,13 +1,13 @@
 using System.Diagnostics;
-using DiepClone.Server.Net;
-using DiepClone.Shared;
+using DeepIo.Server.Net;
+using DeepIo.Shared;
 using Microsoft.AspNetCore.SignalR;
 
-namespace DiepClone.Server.World;
+namespace DeepIo.Server.World;
 
 /// <summary>
 /// Drives the authoritative simulation at a fixed rate and broadcasts a snapshot each tick.
-/// Runs as a hosted background service for the lifetime of the server (plan §6 tick loop).
+/// Runs as a hosted background service for lifetime of server.
 /// </summary>
 public sealed class GameLoop : BackgroundService
 {

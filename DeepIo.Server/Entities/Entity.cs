@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace DiepClone.Server.Entities;
+namespace DeepIo.Server.Entities;
 
 /// <summary>Base class for everything that lives in the arena.</summary>
 public abstract class Entity
