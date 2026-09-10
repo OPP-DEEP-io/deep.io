@@ -1,0 +1,15 @@
+## .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+
+## Rider / VS / VS Code
+.idea/
+.vs/
+.vscode/
+
+## OS
+.DS_Store
+Thumbs.db

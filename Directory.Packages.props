@@ -1,0 +1,11 @@
+<Project>
+  <!-- Central Package Management: versions live here, not in the csproj files.
+       Pinned per plan §3.1 (record the matching native raylib version in the README). -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Raylib-cs" Version="7.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.0" />
+  </ItemGroup>
+</Project>

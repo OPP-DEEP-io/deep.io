@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Pure protocol/contracts. No package or engine dependencies. -->
+</Project>
