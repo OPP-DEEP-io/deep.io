@@ -62,4 +62,8 @@ jobs:
              mv -Tf /opt/deepio/current.new /opt/deepio/current && \
              sudo systemctl restart deepio && \
              sudo systemctl is-active --quiet deepio && \
+             for i in {1..20}; do \
+               curl --fail --silent http://127.0.0.1:5000/ && exit 0; \
+               sleep 1; \
+             done; \
              curl --fail --silent --show-error http://127.0.0.1:5000/"
