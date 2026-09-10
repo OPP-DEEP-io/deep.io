@@ -1,0 +1,65 @@
+name: Deploy server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deepio-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      RELEASE_ID: release-${{ github.sha }}
+      RELEASE_ROOT: /opt/deepio/releases
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish server
+        run: |
+          dotnet restore DeepIo.sln
+          dotnet publish DeepIo.Server/DeepIo.Server.csproj \
+            --configuration Release \
+            --no-restore \
+            --output publish
+
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload release
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "mkdir -p '$RELEASE_ROOT/$RELEASE_ID'"
+          rsync -az --delete \
+            -e "ssh -p $VPS_PORT" \
+            publish/ "$VPS_USER@$VPS_HOST:$RELEASE_ROOT/$RELEASE_ID/"
+
+      - name: Activate release
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "ln -sfn '$RELEASE_ROOT/$RELEASE_ID' /opt/deepio/current.new && \
+             mv -Tf /opt/deepio/current.new /opt/deepio/current && \
+             sudo systemctl restart deepio && \
+             sudo systemctl is-active --quiet deepio && \
+             curl --fail --silent --show-error http://127.0.0.1:5000/"

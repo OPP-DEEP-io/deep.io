@@ -12,5 +12,5 @@ var app = builder.Build();
 app.MapGet("/", () => "deep.io server is running. Connect a client to the /game hub.");
 app.MapHub<GameHub>("/game");
 
-// Bind on all interfaces so a second machine on the LAN can join for the multiplayer demo.
-app.Run("http://0.0.0.0:5000");
+string listenUrl = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:5000";
+app.Run(listenUrl);
