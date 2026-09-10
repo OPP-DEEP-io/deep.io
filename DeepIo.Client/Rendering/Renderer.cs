@@ -48,6 +48,7 @@ public sealed class Renderer
             Raylib.DrawText("Connecting to server...", 20, 60, 22, Color.RayWhite);
         }
 
+        DrawFps();
         Raylib.EndDrawing();
     }
 
@@ -151,5 +152,13 @@ public sealed class Renderer
             Raylib.DrawText($"{entry.Name}:  {entry.Score}", x, y, 16, Color.RayWhite);
             y += 20;
         }
+    }
+
+    private static void DrawFps()
+    {
+        const int fontSize = 16;
+        string text = $"FPS: {Raylib.GetFPS()}";
+        int x = Raylib.GetScreenWidth() - Raylib.MeasureText(text, fontSize) - 20;
+        Raylib.DrawText(text, x, 20, fontSize, Faint);
     }
 }

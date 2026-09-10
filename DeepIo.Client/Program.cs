@@ -19,7 +19,7 @@ string serverUrl  = args.Length > 1 ? args[1] : "http://localhost:5000/game";
 // and leave the window unresponsive. All networking is pushed onto a background task below.
 Raylib.SetTraceLogLevel(TraceLogLevel.Warning);   // silence raylib startup spam
 Raylib.InitWindow(screenW, screenH, "deep.io");
-Raylib.SetTargetFPS(60);
+Raylib.SetTargetFPS(300);
 
 var net = new NetworkClient(serverUrl);
 var renderer = new Renderer();
