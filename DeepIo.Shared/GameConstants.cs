@@ -23,7 +23,7 @@ public static class GameConstants
     public const float BulletSpeed = 520f;
     public const float BulletDamage = 12f;
     public const float BulletLife = 1.6f;         // seconds before despawn
-    public const float ReloadInterval = 0.05f;    // seconds between shots
+    public const float ReloadInterval = 0.35f;    // seconds between shots
 
     // Shapes (passive XP pickups)
     public const int TargetShapeCount = 55;
