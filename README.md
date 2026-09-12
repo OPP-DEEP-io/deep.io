@@ -5,7 +5,7 @@ Small multiplayer diep.io style arena game.
 ## Requirements
 
 - .NET 10 SDK
-- Linux desktop session for client window
+- ASP.NET core
 
 ## Run
 
