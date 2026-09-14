@@ -27,9 +27,11 @@ public sealed class NetworkClient : IAsyncDisposable
         _conn.On<Snapshot>("Snapshot", snap => _queue.Enqueue(snap));
     }
 
-    public Task ConnectAsync() => _conn.StartAsync();
+    public Task ConnectAsync(CancellationToken cancellationToken = default) =>
+        _conn.StartAsync(cancellationToken);
 
-    public Task<int> JoinAsync(string name) => _conn.InvokeAsync<int>("Join", name);
+    public Task<int> JoinAsync(string name, CancellationToken cancellationToken = default) =>
+        _conn.InvokeAsync<int>("Join", name, cancellationToken);
 
     /// <summary>Fire-and-forget input send; we never block the render loop on the network.</summary>
     public void SendInput(InputMessage input) => _ = _conn.SendAsync("SendInput", input);
