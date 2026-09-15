@@ -21,9 +21,11 @@ Start client in another terminal:
 dotnet run --project DeepIo.Client
 ```
 
-Connect more clients to test multiplayer. Default server address: `http://localhost:5000/game`.
+Enter a player name in the client window and select **Join game**. The server address defaults
+to `http://localhost:5000/game` and can be changed on the same screen. Connect more clients to
+test multiplayer.
 
-Client args:
+Optional client arguments prefill the join form but do not connect automatically:
 
 ```bash
 dotnet run --project DeepIo.Client -- <name> <server-url>
