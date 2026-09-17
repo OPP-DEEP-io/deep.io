@@ -8,8 +8,8 @@ using Raylib_cs;
 
 // Command-line values are retained as optional form defaults for development and shortcuts.
 // The player always confirms them from the join screen before a connection is attempted.
-const int screenW = 1280;
-const int screenH = 720;
+const int screenW = 1920;
+const int screenH = 1080;
 const string defaultServerUrl = "http://localhost:5000/game";
 
 string initialPlayerName = args.Length > 0 ? args[0] : "";
