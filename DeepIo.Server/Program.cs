@@ -4,8 +4,12 @@ using DeepIo.Server.World;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSignalR();
-builder.Services.AddSingleton<GameWorld>();       // single shared world (Singleton pattern later)
-builder.Services.AddHostedService<GameLoop>();    // authoritative 25 Hz tick loop
+
+// The world is a thread-safe Singleton (GameWorld.Instance). We register the existing
+// instance instead of letting the container construct one, so DI cannot become a second
+// way of creating an arena.
+builder.Services.AddSingleton(GameWorld.Instance);
+builder.Services.AddHostedService<GameLoop>();    // authoritative tick loop
 
 var app = builder.Build();
 

@@ -47,6 +47,7 @@ void BeginJoin()
     joinScreen.ClearError();
     connectionCts = new CancellationTokenSource();
     CancellationToken cancellationToken = connectionCts.Token;
+    TankArchetype archetype = joinScreen.SelectedArchetype;
 
     connectionTask = Task.Run(async () =>
     {
@@ -55,7 +56,7 @@ void BeginJoin()
         {
             candidate = new NetworkClient(serverUrl);
             await candidate.ConnectAsync(cancellationToken);
-            int id = await candidate.JoinAsync(playerName, cancellationToken);
+            int id = await candidate.JoinAsync(playerName, archetype, cancellationToken);
             connectionResults.Enqueue(ConnectionResult.Succeeded(candidate, id, playerName));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
