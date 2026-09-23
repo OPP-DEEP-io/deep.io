@@ -21,8 +21,14 @@ public sealed record EntityDto
     public float Hp { get; init; }
     public float MaxHp { get; init; }
 
+    /// <summary>Collision/draw radius. Varies per chassis, shape and projectile spec.</summary>
+    public float R { get; init; }
+
     /// <summary>ShapeKind as int (shapes only).</summary>
     public int Shape { get; init; }
+
+    /// <summary>TankArchetype as int (tanks only), so the client can draw the right barrel.</summary>
+    public int Arch { get; init; }
 
     /// <summary>Owner tank id (bullets only).</summary>
     public int Owner { get; init; }

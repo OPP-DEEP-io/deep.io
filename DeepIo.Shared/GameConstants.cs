@@ -12,18 +12,10 @@ public static class GameConstants
     public const int TickRate = 128;               // authoritative server ticks per second
     public const float TickDelta = 1f / TickRate; // seconds per tick
 
-    // Tank
-    public const float TankRadius = 22f;
-    public const float TankSpeed = 260f;          // units / second
-    public const float TankMaxHp = 100f;
-    public const float TankRegenPerSec = 3f;
-
-    // Bullet
-    public const float BulletRadius = 7f;
-    public const float BulletSpeed = 520f;
-    public const float BulletDamage = 12f;
-    public const float BulletLife = 1.6f;         // seconds before despawn
-    public const float ReloadInterval = 0.35f;    // seconds between shots
+    // Per-tank and per-bullet stats are NOT global any more: they belong to the chassis,
+    // weapon and projectile parts produced by the tank Abstract Factories (IChassis,
+    // IWeapon, IProjectileSpec), and shape stats belong to the shape factories. The client
+    // reads each entity's radius off the snapshot (EntityDto.R) instead of assuming one.
 
     // Shapes (passive XP pickups)
     public const int TargetShapeCount = 55;

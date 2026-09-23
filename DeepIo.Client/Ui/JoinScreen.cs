@@ -1,4 +1,5 @@
 using System.Numerics;
+using DeepIo.Shared;
 using Raylib_cs;
 
 namespace DeepIo.Client.Ui;
@@ -8,6 +9,17 @@ public sealed class JoinScreen
 {
     private const int MaxNameLength = 20;
     private const int MaxUrlLength = 200;
+
+    /// <summary>
+    /// The builds offered to the player. Each entry names one Abstract Factory on the server;
+    /// the client knows the label only, never the parts behind it.
+    /// </summary>
+    private static readonly (TankArchetype Archetype, string Label, string Blurb)[] Archetypes =
+    {
+        (TankArchetype.Basic, "BASIC", "balanced hull, steady single shots"),
+        (TankArchetype.Sniper, "SNIPER", "heavy hull, slow long-range rounds"),
+        (TankArchetype.MachineGun, "MACHINE GUN", "fast hull, rapid spray, low damage"),
+    };
 
     private static readonly Color Background = new(24, 25, 34, 255);
     private static readonly Color Panel = new(35, 37, 49, 255);
@@ -22,6 +34,7 @@ public sealed class JoinScreen
     private string _serverUrl;
     private string? _error;
     private ActiveField _activeField = ActiveField.PlayerName;
+    private int _archetypeIndex;
 
     public JoinScreen(string playerName, string serverUrl)
     {
@@ -46,7 +59,19 @@ public sealed class JoinScreen
                 _activeField = ActiveField.ServerUrl;
             else if (Raylib.CheckCollisionPointRec(mouse, layout.JoinButton))
                 return true;
+
+            for (int i = 0; i < Archetypes.Length; i++)
+            {
+                if (Raylib.CheckCollisionPointRec(mouse, ArchetypeButton(layout, i)))
+                    _archetypeIndex = i;
+            }
         }
+
+        // Arrow keys cycle the build without stealing characters from the text fields.
+        if (Raylib.IsKeyPressed(KeyboardKey.Right))
+            _archetypeIndex = (_archetypeIndex + 1) % Archetypes.Length;
+        if (Raylib.IsKeyPressed(KeyboardKey.Left))
+            _archetypeIndex = (_archetypeIndex + Archetypes.Length - 1) % Archetypes.Length;
 
         if (Raylib.IsKeyPressed(KeyboardKey.Tab))
             _activeField = _activeField == ActiveField.PlayerName
@@ -76,6 +101,9 @@ public sealed class JoinScreen
 
         return Raylib.IsKeyPressed(KeyboardKey.Enter);
     }
+
+    /// <summary>The build the player picked, passed straight through to the server's Join call.</summary>
+    public TankArchetype SelectedArchetype => Archetypes[_archetypeIndex].Archetype;
 
     public bool TryGetConnectionSettings(out string playerName, out string serverUrl)
     {
@@ -128,6 +156,13 @@ public sealed class JoinScreen
         DrawLabel("SERVER URL", layout.UrlField);
         DrawField(layout.UrlField, _serverUrl, _activeField == ActiveField.ServerUrl && !isConnecting);
 
+        DrawLabel("TANK BUILD", layout.ArchetypeRow);
+        for (int i = 0; i < Archetypes.Length; i++)
+            DrawArchetypeButton(ArchetypeButton(layout, i), i, mouse, isConnecting);
+
+        DrawCentred(Archetypes[_archetypeIndex].Blurb,
+            (int)(layout.ArchetypeRow.Y + layout.ArchetypeRow.Height + 10), 15, Muted);
+
         Color buttonColor = buttonHovered ? AccentHover : Accent;
         if (isConnecting) buttonColor = new Color(68, 91, 116, 255);
         Raylib.DrawRectangleRounded(layout.JoinButton, 0.18f, 8, buttonColor);
@@ -137,10 +172,39 @@ public sealed class JoinScreen
         if (_error is not null)
             DrawCentred(FitText(_error, 480, 16), (int)layout.JoinButton.Y + 70, 16, Error);
         else
-            DrawCentred(isConnecting ? "Contacting the game server" : "Press Enter to join",
+            DrawCentred(isConnecting ? "Contacting the game server" : "Enter to join   |   arrows pick a build",
                 (int)layout.JoinButton.Y + 70, 16, Muted);
 
         Raylib.EndDrawing();
+    }
+
+    /// <summary>One third of the build row, with a small gutter between buttons.</summary>
+    private static Rectangle ArchetypeButton(Layout layout, int index)
+    {
+        const float gap = 10f;
+        float width = (layout.ArchetypeRow.Width - gap * (Archetypes.Length - 1)) / Archetypes.Length;
+        return new Rectangle(
+            layout.ArchetypeRow.X + index * (width + gap),
+            layout.ArchetypeRow.Y,
+            width,
+            layout.ArchetypeRow.Height);
+    }
+
+    private void DrawArchetypeButton(Rectangle bounds, int index, Vector2 mouse, bool isConnecting)
+    {
+        bool selected = index == _archetypeIndex;
+        bool hovered = !isConnecting && Raylib.CheckCollisionPointRec(mouse, bounds);
+
+        Color fill = selected ? new Color(45, 74, 105, 255) : Field;
+        if (hovered && !selected) fill = new Color(34, 37, 50, 255);
+
+        Raylib.DrawRectangleRounded(bounds, 0.18f, 8, fill);
+        Raylib.DrawRectangleRoundedLinesEx(bounds, 0.18f, 8, selected ? 2f : 1f, selected ? Accent : Border);
+
+        string label = FitText(Archetypes[index].Label, (int)bounds.Width - 12, 15);
+        int textX = (int)(bounds.X + (bounds.Width - Raylib.MeasureText(label, 15)) * 0.5f);
+        int textY = (int)(bounds.Y + (bounds.Height - 15) * 0.5f);
+        Raylib.DrawText(label, textX, textY, 15, selected ? Color.RayWhite : Muted);
     }
 
     private ref string ActiveValue()
@@ -197,15 +261,16 @@ public sealed class JoinScreen
     private static Layout GetLayout()
     {
         const float panelWidth = 560;
-        const float panelHeight = 540;
+        const float panelHeight = 620;
         float panelX = (Raylib.GetScreenWidth() - panelWidth) * 0.5f;
         float panelY = (Raylib.GetScreenHeight() - panelHeight) * 0.5f;
 
         return new Layout(
             new Rectangle(panelX, panelY, panelWidth, panelHeight),
-            new Rectangle(panelX + 40, panelY + 170, panelWidth - 80, 54),
-            new Rectangle(panelX + 40, panelY + 274, panelWidth - 80, 54),
-            new Rectangle(panelX + 40, panelY + 370, panelWidth - 80, 54));
+            new Rectangle(panelX + 40, panelY + 160, panelWidth - 80, 54),
+            new Rectangle(panelX + 40, panelY + 258, panelWidth - 80, 54),
+            new Rectangle(panelX + 40, panelY + 356, panelWidth - 80, 44),
+            new Rectangle(panelX + 40, panelY + 450, panelWidth - 80, 54));
     }
 
     private static string FitText(string value, int maxWidth, int fontSize)
@@ -243,5 +308,6 @@ public sealed class JoinScreen
         Rectangle Panel,
         Rectangle NameField,
         Rectangle UrlField,
+        Rectangle ArchetypeRow,
         Rectangle JoinButton);
 }

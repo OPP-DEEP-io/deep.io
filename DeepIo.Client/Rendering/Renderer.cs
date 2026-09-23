@@ -87,30 +87,38 @@ public sealed class Renderer
     private static void DrawShape(EntityDto e, Camera cam)
     {
         var pos = cam.WorldToScreen(new Vector2(e.X, e.Y));
-        (int sides, float radius, Color color) = (ShapeKind)e.Shape switch
+        (int sides, Color color) = (ShapeKind)e.Shape switch
         {
-            ShapeKind.Square => (4, 18f, new Color(240, 210, 90, 255)),
-            ShapeKind.Triangle => (3, 24f, new Color(230, 120, 120, 255)),
-            _ => (5, 34f, new Color(120, 130, 230, 255)),
+            ShapeKind.Square => (4, new Color(240, 210, 90, 255)),
+            ShapeKind.Triangle => (3, new Color(230, 120, 120, 255)),
+            _ => (5, new Color(120, 130, 230, 255)),
         };
-        Raylib.DrawPoly(pos, sides, radius * cam.Zoom, e.Rot * Rad2Deg, color);
-        DrawHpBar(pos, radius * cam.Zoom, e.Hp, e.MaxHp);
+        float radius = e.R * cam.Zoom;
+        Raylib.DrawPoly(pos, sides, radius, e.Rot * Rad2Deg, color);
+        DrawHpBar(pos, radius, e.Hp, e.MaxHp);
     }
 
     private static void DrawBullet(EntityDto e, Camera cam)
     {
         var pos = cam.WorldToScreen(new Vector2(e.X, e.Y));
-        Raylib.DrawCircleV(pos, GameConstants.BulletRadius * cam.Zoom, BulletColor);
+        Raylib.DrawCircleV(pos, e.R * cam.Zoom, BulletColor);
     }
 
     private static void DrawTank(EntityDto e, Camera cam, int myId)
     {
         var pos = cam.WorldToScreen(new Vector2(e.X, e.Y));
-        float r = GameConstants.TankRadius * cam.Zoom;
+        float r = e.R * cam.Zoom;
 
-        // Barrel: a rectangle rooted at the tank centre, rotated to the aim angle.
-        float len = r * 1.7f;
-        float wid = r * 0.7f;
+        // Barrel: a rectangle rooted at the tank centre, rotated to the aim angle. Its shape
+        // reflects the build the player picked, so enemies are readable at a glance.
+        (float lenScale, float widScale) = (TankArchetype)e.Arch switch
+        {
+            TankArchetype.Sniper => (2.5f, 0.55f),
+            TankArchetype.MachineGun => (1.4f, 0.95f),
+            _ => (1.7f, 0.7f),
+        };
+        float len = r * lenScale;
+        float wid = r * widScale;
         var rect = new Rectangle(pos.X, pos.Y, len, wid);
         var origin = new Vector2(0f, wid * 0.5f);
         Raylib.DrawRectanglePro(rect, origin, e.Rot * Rad2Deg, BarrelColor);

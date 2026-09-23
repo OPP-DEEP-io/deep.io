@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Numerics;
 using DeepIo.Server.Combat;
 using DeepIo.Server.Entities;
+using DeepIo.Server.Factories;
 using DeepIo.Shared;
 
 namespace DeepIo.Server.World;
@@ -9,14 +10,27 @@ namespace DeepIo.Server.World;
 /// <summary>
 /// The authoritative simulation and single entity registry.
 ///
-/// Threading model: SignalR hub touches this from background threads only
-/// through the concurrent queues (join / leave / input). ALL mutation of the entity
-/// dictionary happens on the game-loop thread inside <see cref="Update"/>, so no locks are
-/// needed on the hot path. This is registered as a DI singleton today; Student A formalises
-/// it as the thread-safe Singleton pattern in Part 1.
+/// SINGLETON (thread safe). There must be exactly one arena per process: the SignalR hub,
+/// the game loop and any future admin endpoint all have to mutate the same registry.
+/// Instantiation is guarded by <see cref="Lazy{T}"/> with
+/// <see cref="LazyThreadSafetyMode.ExecutionAndPublication"/>, so even if several request
+/// threads race on first access, the constructor runs exactly once and every thread gets the
+/// same fully-published instance. The constructor is private, so no second world can be
+/// created — the DI container is handed <see cref="Instance"/> rather than being allowed to
+/// construct its own.
+///
+/// Threading model of the state itself: SignalR hub threads only ever touch the concurrent
+/// inboxes (join / leave / input). ALL mutation of the entity dictionary happens on the
+/// game-loop thread inside <see cref="Update"/>, so no locks are needed on the hot path.
 /// </summary>
 public sealed class GameWorld
 {
+    private static readonly Lazy<GameWorld> LazyInstance =
+        new(static () => new GameWorld(), LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>The one and only arena. Safe to touch from any thread.</summary>
+    public static GameWorld Instance => LazyInstance.Value;
+
     private readonly Dictionary<int, Entity> _entities = new();
     private readonly Dictionary<string, int> _connectionToTank = new();
 
@@ -25,32 +39,36 @@ public sealed class GameWorld
     private readonly ConcurrentQueue<string> _pendingLeaves = new();
     private readonly ConcurrentDictionary<string, InputMessage> _inputs = new();
 
+    // Object creation is delegated to the factories; the world never news up a Shape or Tank.
+    private readonly ShapeSpawner _shapeSpawner = new();
+    private readonly TankAssembler _tankAssembler = new();
+
     private int _nextId;
     private long _tick;
     private readonly Random _rng = new();
 
+    /// <summary>Private: the only way to a world is <see cref="Instance"/>.</summary>
+    private GameWorld()
+    {
+    }
+
     public long CurrentTick => _tick;
+
+    public int EntityCount => _entities.Count;
+
+    public TankAssembler Tanks => _tankAssembler;
 
     public int NextId() => Interlocked.Increment(ref _nextId);
 
     // ---- Called from the SignalR hub (background threads) -------------------------------
 
     /// <summary>
-    /// Creates a tank immediately (so the caller gets its id synchronously) and queues it to
+    /// Assembles a tank immediately (so the caller gets its id synchronously) and queues it to
     /// be inserted into the registry on the next tick.
     /// </summary>
-    public Tank CreateTankForConnection(string connectionId, string name)
+    public Tank CreateTankForConnection(string connectionId, string name, TankArchetype archetype)
     {
-        var tank = new Tank
-        {
-            Id = NextId(),
-            Name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim(),
-            ConnectionId = connectionId,
-            Position = RandomPoint(),
-            Radius = GameConstants.TankRadius,
-            Hp = GameConstants.TankMaxHp,
-            MaxHp = GameConstants.TankMaxHp,
-        };
+        Tank tank = _tankAssembler.Assemble(NextId(), connectionId, name, archetype, RandomPoint());
         _pendingJoins.Enqueue(tank);
         return tank;
     }
@@ -70,7 +88,7 @@ public sealed class GameWorld
         DrainLeaves();
         ApplyInputs();
         Integrate(dt);
-        FireWeapons(dt);
+        FireWeapons();
         ResolveCollisions();
         Cleanup();
         MaintainShapes();
@@ -83,33 +101,9 @@ public sealed class GameWorld
 
         foreach (var e in _entities.Values)
         {
-            switch (e)
-            {
-                case Tank t:
-                    entities.Add(new EntityDto
-                    {
-                        Id = t.Id, Kind = "tank", X = t.Position.X, Y = t.Position.Y,
-                        Rot = t.Aim, Hp = t.Hp, MaxHp = t.MaxHp, Team = t.Team, Name = t.Name,
-                    });
-                    board.Add(new LeaderboardEntry { Name = t.Name, Score = t.Score });
-                    break;
-
-                case Shape s:
-                    entities.Add(new EntityDto
-                    {
-                        Id = s.Id, Kind = "shape", X = s.Position.X, Y = s.Position.Y,
-                        Rot = s.Rotation, Hp = s.Hp, MaxHp = s.MaxHp, Shape = (int)s.Kind,
-                    });
-                    break;
-
-                case Bullet b:
-                    entities.Add(new EntityDto
-                    {
-                        Id = b.Id, Kind = "bullet", X = b.Position.X, Y = b.Position.Y,
-                        Owner = b.OwnerId, Hp = 1f, MaxHp = 1f,
-                    });
-                    break;
-            }
+            // Polymorphic: each entity knows its own wire shape.
+            entities.Add(e.ToDto());
+            if (e is Tank t) board.Add(new LeaderboardEntry { Name = t.Name, Score = t.Score });
         }
 
         board.Sort((a, b) => b.Score.CompareTo(a.Score));
@@ -146,71 +140,33 @@ public sealed class GameWorld
             if (!_entities.TryGetValue(id, out var e) || e is not Tank tank) continue;
             if (!_inputs.TryGetValue(conn, out var input)) continue;
 
-            var dir = new Vector2(input.MoveX, input.MoveY);
-            if (dir.LengthSquared() > 1e-4f) dir = Vector2.Normalize(dir);
-
-            tank.MoveDir = dir;
-            tank.Aim = input.Aim;
-            tank.Firing = input.Fire;
-            tank.LastInputSeq = input.Seq;
+            tank.ApplyInput(input);
         }
     }
 
     private void Integrate(float dt)
     {
-        float half = GameConstants.ArenaSize * 0.5f;
         foreach (var e in _entities.Values)
-        {
-            switch (e)
-            {
-                case Tank tank:
-                    tank.Velocity = tank.MoveDir * GameConstants.TankSpeed;
-                    tank.Position += tank.Velocity * dt;
-                    tank.Position = ClampToArena(tank.Position, tank.Radius, half);
-                    if (tank.Hp < tank.MaxHp)
-                        tank.Hp = MathF.Min(tank.MaxHp, tank.Hp + GameConstants.TankRegenPerSec * dt);
-                    break;
-
-                case Bullet bullet:
-                    bullet.Position += bullet.Velocity * dt;
-                    bullet.Life -= dt;
-                    break;
-
-                case Shape shape:
-                    shape.Rotation += shape.SpinSpeed * dt;
-                    break;
-            }
-        }
+            e.Update(dt);
     }
 
-    private void FireWeapons(float dt)
+    private void FireWeapons()
     {
         // Collect first: we cannot add to _entities while iterating its Values view.
         List<Bullet>? spawned = null;
 
         foreach (var e in _entities.Values)
         {
-            if (e is not Tank tank) continue;
+            if (e is not Tank tank || !tank.CanFire) continue;
+            tank.BeginReload();
 
-            tank.ReloadTimer -= dt;
-            if (!tank.Firing || tank.ReloadTimer > 0f) continue;
-            tank.ReloadTimer = GameConstants.ReloadInterval;
+            // Spread comes from the barrel this build's factory produced.
+            float spread = tank.Weapon.Spread;
+            float angle = spread <= 0f
+                ? tank.Aim
+                : tank.Aim + (float)((_rng.NextDouble() * 2 - 1) * spread);
 
-            var dir = new Vector2(MathF.Cos(tank.Aim), MathF.Sin(tank.Aim));
-            var muzzle = tank.Position + dir * (tank.Radius + GameConstants.BulletRadius + 2f);
-
-            (spawned ??= new List<Bullet>()).Add(new Bullet
-            {
-                Id = NextId(),
-                OwnerId = tank.Id,
-                Position = muzzle,
-                Velocity = dir * GameConstants.BulletSpeed,
-                Radius = GameConstants.BulletRadius,
-                Hp = 1f,
-                MaxHp = 1f,
-                Damage = GameConstants.BulletDamage,
-                Life = GameConstants.BulletLife,
-            });
+            (spawned ??= new List<Bullet>()).Add(Bullet.FromSpec(NextId(), tank, angle));
         }
 
         if (spawned is null) return;
@@ -240,9 +196,8 @@ public sealed class GameWorld
                 if (!Collision.CirclesOverlap(bullet.Position, bullet.Radius, shape.Position, shape.Radius))
                     continue;
 
-                shape.Hp -= bullet.Damage;
-                bullet.Hp = 0f;
-                if (shape.Dead) AwardScore(bullet.OwnerId, shape.XpValue);
+                if (shape.ApplyDamage(bullet.Damage)) AwardScore(bullet.OwnerId, shape.XpValue);
+                bullet.Kill();
                 break;
             }
             if (bullet.Dead) continue;
@@ -253,9 +208,8 @@ public sealed class GameWorld
                 if (!Collision.CirclesOverlap(bullet.Position, bullet.Radius, tank.Position, tank.Radius))
                     continue;
 
-                tank.Hp -= bullet.Damage;
-                bullet.Hp = 0f;
-                if (tank.Dead) AwardScore(bullet.OwnerId, 100);
+                if (tank.ApplyDamage(bullet.Damage)) AwardScore(bullet.OwnerId, 100);
+                bullet.Kill();
                 break;
             }
         }
@@ -264,7 +218,7 @@ public sealed class GameWorld
     private void AwardScore(int tankId, int amount)
     {
         if (_entities.TryGetValue(tankId, out var owner) && owner is Tank tank)
-            tank.Score += amount;
+            tank.AddScore(amount);
     }
 
     private void Cleanup()
@@ -275,7 +229,7 @@ public sealed class GameWorld
         {
             switch (e)
             {
-                case Bullet b when b.Dead || b.Life <= 0f:
+                case Bullet b when b.Dead || b.Expired:
                     (remove ??= new List<int>()).Add(b.Id);
                     break;
 
@@ -284,12 +238,7 @@ public sealed class GameWorld
                     break;
 
                 case Tank t when t.Dead:
-                    // Prototype respawn: full heal, halve score, teleport to a fresh spot.
-                    t.Hp = t.MaxHp;
-                    t.Score = Math.Max(0, t.Score / 2);
-                    t.Position = RandomPoint();
-                    t.MoveDir = Vector2.Zero;
-                    t.Firing = false;
+                    t.Respawn(RandomPoint());
                     break;
             }
         }
@@ -305,36 +254,11 @@ public sealed class GameWorld
             if (e is Shape) count++;
 
         for (; count < GameConstants.TargetShapeCount; count++)
-            SpawnShape();
-    }
-
-    private void SpawnShape()
-    {
-        int roll = _rng.Next(100);
-        ShapeKind kind = roll < 60 ? ShapeKind.Square
-                       : roll < 90 ? ShapeKind.Triangle
-                       : ShapeKind.Pentagon;
-
-        (float radius, float hp, int xp) = kind switch
         {
-            ShapeKind.Square => (18f, 30f, 10),
-            ShapeKind.Triangle => (24f, 45f, 25),
-            _ => (34f, 100f, 130),
-        };
-
-        var shape = new Shape
-        {
-            Id = NextId(),
-            Kind = kind,
-            Position = RandomPoint(),
-            Radius = radius,
-            Hp = hp,
-            MaxHp = hp,
-            XpValue = xp,
-            Rotation = (float)(_rng.NextDouble() * MathF.Tau),
-            SpinSpeed = (float)(_rng.NextDouble() * 0.6 - 0.3),
-        };
-        _entities[shape.Id] = shape;
+            // Factory Method: which polygon subclass gets allocated is the creators' business.
+            Shape shape = _shapeSpawner.Spawn(NextId(), RandomPoint(), _rng);
+            _entities[shape.Id] = shape;
+        }
     }
 
     private Vector2 RandomPoint()
@@ -343,12 +267,5 @@ public sealed class GameWorld
         return new Vector2(
             (float)(_rng.NextDouble() * 2 - 1) * half,
             (float)(_rng.NextDouble() * 2 - 1) * half);
-    }
-
-    private static Vector2 ClampToArena(Vector2 p, float r, float half)
-    {
-        p.X = Math.Clamp(p.X, -half + r, half - r);
-        p.Y = Math.Clamp(p.Y, -half + r, half - r);
-        return p;
     }
 }
