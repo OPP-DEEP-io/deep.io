@@ -98,6 +98,14 @@ public sealed class RaylibRenderBackend : IRenderBackend
         ClientKey.Backspace => KeyboardKey.Backspace,
         ClientKey.Delete => KeyboardKey.Delete,
         ClientKey.Enter => KeyboardKey.Enter,
+        ClientKey.One => KeyboardKey.One,
+        ClientKey.Two => KeyboardKey.Two,
+        ClientKey.Three => KeyboardKey.Three,
+        ClientKey.Four => KeyboardKey.Four,
+        ClientKey.Five => KeyboardKey.Five,
+        ClientKey.Six => KeyboardKey.Six,
+        ClientKey.Seven => KeyboardKey.Seven,
+        ClientKey.Eight => KeyboardKey.Eight,
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
     };
 }

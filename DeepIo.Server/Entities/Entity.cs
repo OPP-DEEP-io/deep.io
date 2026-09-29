@@ -1,4 +1,5 @@
 using System.Numerics;
+using DeepIo.Server.Events;
 using DeepIo.Shared;
 
 namespace DeepIo.Server.Entities;
@@ -20,18 +21,32 @@ public abstract class Entity
 
     public bool Dead => Hp <= 0f;
 
+    /// <summary>
+    /// Where this entity reports damage and destruction. Set by <c>GameWorld</c> when the entity
+    /// enters the arena; while null (e.g. in a unit test) the entity is simply unobserved.
+    /// </summary>
+    public IGameSubject? EventBus { get; set; }
+
     /// <summary>Wire discriminator: "tank" | "shape" | "bullet".</summary>
     public abstract string Kind { get; }
 
     /// <summary>Advances this entity by <paramref name="dt"/> seconds. Default: straight-line motion.</summary>
     public virtual void Update(float dt) => Position += Velocity * dt;
 
-    /// <summary>Applies damage and reports whether this hit was the killing blow.</summary>
-    public bool ApplyDamage(float amount)
+    /// <summary>
+    /// Applies damage, notifies observers, and reports whether this hit was the killing blow.
+    /// What a kill is worth (XP, leaderboard, achievements, kill feed) is up to the observers.
+    /// </summary>
+    public bool ApplyDamage(float amount, Entity? attacker = null)
     {
         if (Dead) return false;
         Hp -= amount;
-        return Dead;
+
+        EventBus?.Notify(new EntityDamagedEvent(this, attacker, amount));
+        if (!Dead) return false;
+
+        EventBus?.Notify(new EntityDestroyedEvent(this, attacker));
+        return true;
     }
 
     public void Heal(float amount) => Hp = MathF.Min(MaxHp, Hp + amount);

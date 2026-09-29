@@ -37,6 +37,18 @@ public sealed record EntityDto
 
     /// <summary>Display name (tanks only).</summary>
     public string? Name { get; init; }
+
+    /// <summary>Level (tanks only).</summary>
+    public int Lvl { get; init; }
+
+    /// <summary>Unspent skill points (tanks only).</summary>
+    public int Pts { get; init; }
+
+    /// <summary>Points spent per stat, indexed by (int)StatKind (tanks only).</summary>
+    public int[]? Up { get; init; }
+
+    /// <summary>Movement strategy currently driving a bot ("Chase", "Flee", ...); null for humans.</summary>
+    public string? Ai { get; init; }
 }
 
 public sealed record LeaderboardEntry
@@ -58,4 +70,7 @@ public sealed record Snapshot
 
     public List<EntityDto> Entities { get; init; } = new();
     public List<LeaderboardEntry> Leaderboard { get; init; } = new();
+
+    /// <summary>Recent kill-feed lines (kills, level milestones, achievements), newest last.</summary>
+    public List<string> Feed { get; init; } = new();
 }

@@ -53,6 +53,10 @@ public sealed class SignalRGameConnectionAdapter : IGameConnection
 
     public Task SendInputAsync(InputMessage input) => _conn.SendAsync("SendInput", input);
 
+    public Task UpgradeStatAsync(StatKind stat) => _conn.SendAsync("UpgradeStat", stat);
+
+    public Task UndoUpgradeAsync() => _conn.SendAsync("UndoUpgrade");
+
     /// <summary>
     /// Returns and clears the most recent snapshot.
     /// Current client renders this state directly; interpolation could retain two snapshots later.

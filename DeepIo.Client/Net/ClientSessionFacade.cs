@@ -194,6 +194,42 @@ public sealed class ClientSessionFacade : IAsyncDisposable
         }
     }
 
+    /// <summary>Spends one skill point; the server runs it as an undoable UpgradeStatCommand.</summary>
+    public void UpgradeStat(StatKind stat) => SendUpgradeRequest(connection => connection.UpgradeStatAsync(stat));
+
+    /// <summary>Undoes this player's most recent upgrade (respec) and refunds the point.</summary>
+    public void UndoUpgrade() => SendUpgradeRequest(connection => connection.UndoUpgradeAsync());
+
+    private void SendUpgradeRequest(Func<IGameConnection, Task> send)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (State != ClientSessionState.Playing)
+            throw new InvalidOperationException("No active game session.");
+
+        try
+        {
+            Task request = send(_active!.Connection);
+            if (!request.IsCompletedSuccessfully)
+                _ = ObserveUpgradeRequestAsync(request);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Upgrade request failed: {ex.Message}");
+        }
+    }
+
+    private static async Task ObserveUpgradeRequestAsync(Task request)
+    {
+        try
+        {
+            await request;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Upgrade request failed: {ex.Message}");
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;

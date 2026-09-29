@@ -12,5 +12,7 @@ public interface IGameConnection : IAsyncDisposable
     Task ConnectAsync(CancellationToken cancellationToken = default);
     Task<int> JoinAsync(string name, TankArchetype archetype, CancellationToken cancellationToken = default);
     Task SendInputAsync(InputMessage input);
+    Task UpgradeStatAsync(StatKind stat);
+    Task UndoUpgradeAsync();
     Snapshot? TakeLatest();
 }

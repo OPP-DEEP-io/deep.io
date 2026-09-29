@@ -13,7 +13,11 @@ public readonly record struct RenderRect(float X, float Y, float Width, float He
         point.X >= X && point.X <= X + Width && point.Y >= Y && point.Y <= Y + Height;
 }
 
-public enum ClientKey { W, A, S, D, Space, Left, Right, Up, Down, Home, End, Tab, Backspace, Delete, Enter }
+public enum ClientKey
+{
+    W, A, S, D, Space, Left, Right, Up, Down, Home, End, Tab, Backspace, Delete, Enter,
+    One, Two, Three, Four, Five, Six, Seven, Eight,   // stat upgrades
+}
 
 public enum RenderTextStyle { Ui, Title }
 

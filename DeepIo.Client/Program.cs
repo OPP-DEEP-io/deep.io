@@ -26,6 +26,13 @@ int seq = 0;
 float inputTimer = 0f;
 const float inputInterval = 1f / 30f;
 
+// Keys 1-8 spend a skill point on the StatKind with the same index.
+ClientKey[] upgradeKeys =
+[
+    ClientKey.One, ClientKey.Two, ClientKey.Three, ClientKey.Four,
+    ClientKey.Five, ClientKey.Six, ClientKey.Seven, ClientKey.Eight,
+];
+
 void BeginJoin()
 {
     if (!joinScreen.TryGetConnectionSettings(out string playerName, out string serverUrl))
@@ -97,6 +104,12 @@ while (!backend.WindowShouldClose())
             Fire = fire,
         });
     }
+
+    for (int i = 0; i < upgradeKeys.Length; i++)
+        if (backend.IsKeyPressed(upgradeKeys[i]))
+            session.UpgradeStat((StatKind)i);
+    if (backend.IsKeyPressed(ClientKey.Backspace))
+        session.UndoUpgrade();
 
     renderer.Draw(snapshot, cam, session.PlayerId);
 }

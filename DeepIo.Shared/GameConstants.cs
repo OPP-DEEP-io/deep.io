@@ -19,4 +19,11 @@ public static class GameConstants
 
     // Shapes (passive XP pickups)
     public const int TargetShapeCount = 55;
+
+    // Progression: one skill point per level, spent on StatKind upgrades.
+    public const int MaxLevel = 45;
+    public const int MaxStatLevel = 7;
+
+    // Server-controlled tanks that keep the arena busy (driven by movement strategies).
+    public const int BotCount = 5;
 }
