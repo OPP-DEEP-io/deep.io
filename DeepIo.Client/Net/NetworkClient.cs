@@ -37,6 +37,12 @@ public sealed class NetworkClient : IAsyncDisposable
     /// <summary>Fire-and-forget input send; we never block the render loop on the network.</summary>
     public void SendInput(InputMessage input) => _ = _conn.SendAsync("SendInput", input);
 
+    /// <summary>Asks the server to spend one skill point on <paramref name="stat"/>.</summary>
+    public void UpgradeStat(StatKind stat) => _ = _conn.SendAsync("UpgradeStat", stat);
+
+    /// <summary>Asks the server to undo the last upgrade (respec one point).</summary>
+    public void UndoUpgrade() => _ = _conn.SendAsync("UndoUpgrade");
+
     /// <summary>
     /// Returns the most recent snapshot and discards any older ones queued behind it.
     /// (Prototype: render the newest state directly. An interpolation buffer that keeps the

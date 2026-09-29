@@ -38,6 +38,13 @@ int seq = 0;
 float inputTimer = 0f;
 const float inputInterval = 1f / 30f;
 
+// Keys 1-8 spend a skill point on the StatKind with the same index.
+KeyboardKey[] upgradeKeys =
+[
+    KeyboardKey.One, KeyboardKey.Two, KeyboardKey.Three, KeyboardKey.Four,
+    KeyboardKey.Five, KeyboardKey.Six, KeyboardKey.Seven, KeyboardKey.Eight,
+];
+
 void BeginJoin()
 {
     if (!joinScreen.TryGetConnectionSettings(out string playerName, out string serverUrl))
@@ -153,6 +160,12 @@ while (!Raylib.WindowShouldClose())
             Fire = fire,
         });
     }
+
+    for (int i = 0; i < upgradeKeys.Length; i++)
+        if (Raylib.IsKeyPressed(upgradeKeys[i]))
+            net.UpgradeStat((StatKind)i);
+    if (Raylib.IsKeyPressed(KeyboardKey.Backspace))
+        net.UndoUpgrade();
 
     renderer.Draw(snapshot, cam, myId);
 }

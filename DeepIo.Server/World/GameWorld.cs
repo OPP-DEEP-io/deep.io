@@ -1,7 +1,11 @@
 using System.Collections.Concurrent;
 using System.Numerics;
+using DeepIo.Server.Ai;
 using DeepIo.Server.Combat;
+using DeepIo.Server.Commands;
 using DeepIo.Server.Entities;
+using DeepIo.Server.Events;
+using DeepIo.Server.Events.Observers;
 using DeepIo.Server.Factories;
 using DeepIo.Shared;
 
@@ -38,10 +42,25 @@ public sealed class GameWorld
     private readonly ConcurrentQueue<Tank> _pendingJoins = new();
     private readonly ConcurrentQueue<string> _pendingLeaves = new();
     private readonly ConcurrentDictionary<string, InputMessage> _inputs = new();
+    private readonly ConcurrentQueue<UpgradeRequest> _pendingUpgrades = new();
 
     // Object creation is delegated to the factories; the world never news up a Shape or Tank.
     private readonly ShapeSpawner _shapeSpawner = new();
     private readonly TankAssembler _tankAssembler = new();
+
+    // Observer: entities publish hits and kills on this bus. Everything that reacts to them
+    // (XP, leaderboard, achievements, kill feed) is an attached observer, not code in the tick.
+    private readonly GameEventBus _eventBus = new();
+    private readonly LeaderboardObserver _leaderboard = new();
+    private readonly NetworkBroadcastObserver _feed = new();
+
+    private readonly CollisionResolver _collisions = new();
+
+    // Strategy: one controller per bot, each swapping movement strategies at runtime.
+    private static readonly string[] BotNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta", "Bot Echo", "Bot Foxtrot"];
+    private readonly List<BotController> _bots = new();
+    private readonly List<Tank> _tankView = new();
+    private readonly List<Shape> _shapeView = new();
 
     private int _nextId;
     private long _tick;
@@ -50,6 +69,12 @@ public sealed class GameWorld
     /// <summary>Private: the only way to a world is <see cref="Instance"/>.</summary>
     private GameWorld()
     {
+        // The feed goes first: observers below publish follow-up events (level-ups,
+        // achievements) mid-notification, and the feed should list the cause before them.
+        _eventBus.Attach(_feed);
+        _eventBus.Attach(new XpAwardObserver(_eventBus));
+        _eventBus.Attach(_leaderboard);
+        _eventBus.Attach(new AchievementObserver(_eventBus));
     }
 
     public long CurrentTick => _tick;
@@ -57,6 +82,9 @@ public sealed class GameWorld
     public int EntityCount => _entities.Count;
 
     public TankAssembler Tanks => _tankAssembler;
+
+    /// <summary>The arena's subject; attach extra observers here.</summary>
+    public IGameSubject EventBus => _eventBus;
 
     public int NextId() => Interlocked.Increment(ref _nextId);
 
@@ -77,6 +105,14 @@ public sealed class GameWorld
 
     public void SetInput(string connectionId, InputMessage input) => _inputs[connectionId] = input;
 
+    /// <summary>Queues a skill-point spend; it becomes an <see cref="UpgradeStatCommand"/> on the next tick.</summary>
+    public void EnqueueUpgrade(string connectionId, StatKind stat) =>
+        _pendingUpgrades.Enqueue(new UpgradeRequest(connectionId, stat));
+
+    /// <summary>Queues an undo of this player's most recent upgrade (respec).</summary>
+    public void EnqueueUndoUpgrade(string connectionId) =>
+        _pendingUpgrades.Enqueue(new UpgradeRequest(connectionId, null));
+
     // ---- Called from the game loop thread only -----------------------------------------
 
     public void Update(float dt)
@@ -87,39 +123,48 @@ public sealed class GameWorld
         DrainJoins();
         DrainLeaves();
         ApplyInputs();
+        DrainUpgrades();
+        UpdateBots(dt);
         Integrate(dt);
         FireWeapons();
-        ResolveCollisions();
+        ResolveCollisions(dt);
         Cleanup();
         MaintainShapes();
+        MaintainBots();
     }
 
     public Snapshot BuildSnapshot()
     {
         var entities = new List<EntityDto>(_entities.Count);
-        var board = new List<LeaderboardEntry>();
 
+        // Polymorphic: each entity knows its own wire shape.
         foreach (var e in _entities.Values)
-        {
-            // Polymorphic: each entity knows its own wire shape.
             entities.Add(e.ToDto());
-            if (e is Tank t) board.Add(new LeaderboardEntry { Name = t.Name, Score = t.Score });
-        }
 
-        board.Sort((a, b) => b.Score.CompareTo(a.Score));
-        if (board.Count > 10) board.RemoveRange(10, board.Count - 10);
-
-        return new Snapshot { Tick = _tick, Entities = entities, Leaderboard = board };
+        return new Snapshot
+        {
+            Tick = _tick,
+            Entities = entities,
+            Leaderboard = _leaderboard.Current(_entities.Values.OfType<Tank>()),
+            Feed = _feed.RecentLines(),
+        };
     }
 
     // ---- Tick stages -------------------------------------------------------------------
+
+    private void Add(Entity entity)
+    {
+        entity.EventBus = _eventBus;
+        _entities[entity.Id] = entity;
+    }
 
     private void DrainJoins()
     {
         while (_pendingJoins.TryDequeue(out var tank))
         {
-            _entities[tank.Id] = tank;
+            Add(tank);
             _connectionToTank[tank.ConnectionId] = tank.Id;
+            _eventBus.Notify(new PlayerJoinedEvent(tank));
         }
     }
 
@@ -128,8 +173,8 @@ public sealed class GameWorld
         while (_pendingLeaves.TryDequeue(out var conn))
         {
             _inputs.TryRemove(conn, out _);
-            if (_connectionToTank.Remove(conn, out var id))
-                _entities.Remove(id);
+            if (_connectionToTank.Remove(conn, out var id) && _entities.Remove(id, out var e) && e is Tank tank)
+                _eventBus.Notify(new PlayerLeftEvent(tank));
         }
     }
 
@@ -138,10 +183,44 @@ public sealed class GameWorld
         foreach (var (conn, id) in _connectionToTank)
         {
             if (!_entities.TryGetValue(id, out var e) || e is not Tank tank) continue;
-            if (!_inputs.TryGetValue(conn, out var input)) continue;
+            if (!_inputs.TryGetValue(conn, out var input) || input.Seq == tank.LastInputSeq) continue;
 
-            tank.ApplyInput(input);
+            // Command: each new input message becomes the same three commands a bot issues.
+            tank.LastInputSeq = input.Seq;
+            tank.InputHistory.Execute(new MoveCommand(tank, new Vector2(input.MoveX, input.MoveY)));
+            tank.InputHistory.Execute(new RotateCommand(tank, input.Aim));
+            tank.InputHistory.Execute(new FireCommand(tank, input.Fire));
         }
+    }
+
+    private void DrainUpgrades()
+    {
+        while (_pendingUpgrades.TryDequeue(out var request))
+        {
+            if (!_connectionToTank.TryGetValue(request.ConnectionId, out var id)) continue;
+            if (!_entities.TryGetValue(id, out var e) || e is not Tank tank) continue;
+
+            if (request.Stat is { } stat)
+                tank.UpgradeHistory.Execute(new UpgradeStatCommand(tank, stat));
+            else
+                tank.UpgradeHistory.Undo();
+        }
+    }
+
+    private void UpdateBots(float dt)
+    {
+        if (_bots.Count == 0) return;
+
+        _tankView.Clear();
+        _shapeView.Clear();
+        foreach (var e in _entities.Values)
+        {
+            if (e is Tank t) _tankView.Add(t);
+            else if (e is Shape s) _shapeView.Add(s);
+        }
+
+        foreach (var bot in _bots)
+            bot.Update(dt, _tankView, _shapeView);
     }
 
     private void Integrate(float dt)
@@ -170,56 +249,11 @@ public sealed class GameWorld
         }
 
         if (spawned is null) return;
-        foreach (var b in spawned) _entities[b.Id] = b;
+        foreach (var b in spawned) Add(b);
     }
 
-    private void ResolveCollisions()
-    {
-        // Snapshot the typed lists once (brute force, fine for prototype counts).
-        var bullets = new List<Bullet>();
-        var shapes = new List<Shape>();
-        var tanks = new List<Tank>();
-        foreach (var e in _entities.Values)
-        {
-            if (e is Bullet b) bullets.Add(b);
-            else if (e is Shape s) shapes.Add(s);
-            else if (e is Tank t) tanks.Add(t);
-        }
-
-        foreach (var bullet in bullets)
-        {
-            if (bullet.Dead) continue;
-
-            foreach (var shape in shapes)
-            {
-                if (shape.Dead) continue;
-                if (!Collision.CirclesOverlap(bullet.Position, bullet.Radius, shape.Position, shape.Radius))
-                    continue;
-
-                if (shape.ApplyDamage(bullet.Damage)) AwardScore(bullet.OwnerId, shape.XpValue);
-                bullet.Kill();
-                break;
-            }
-            if (bullet.Dead) continue;
-
-            foreach (var tank in tanks)
-            {
-                if (tank.Id == bullet.OwnerId || tank.Dead) continue;
-                if (!Collision.CirclesOverlap(bullet.Position, bullet.Radius, tank.Position, tank.Radius))
-                    continue;
-
-                if (tank.ApplyDamage(bullet.Damage)) AwardScore(bullet.OwnerId, 100);
-                bullet.Kill();
-                break;
-            }
-        }
-    }
-
-    private void AwardScore(int tankId, int amount)
-    {
-        if (_entities.TryGetValue(tankId, out var owner) && owner is Tank tank)
-            tank.AddScore(amount);
-    }
+    // Damage only; XP for kills is paid by XpAwardObserver when the victim reports its death.
+    private void ResolveCollisions(float dt) => _collisions.Resolve(_entities, dt);
 
     private void Cleanup()
     {
@@ -257,7 +291,24 @@ public sealed class GameWorld
         {
             // Factory Method: which polygon subclass gets allocated is the creators' business.
             Shape shape = _shapeSpawner.Spawn(NextId(), RandomPoint(), _rng);
-            _entities[shape.Id] = shape;
+            Add(shape);
+        }
+    }
+
+    private void MaintainBots()
+    {
+        while (_bots.Count < GameConstants.BotCount)
+        {
+            // Bots are built by the same Abstract Factory path as players, with a random build.
+            var archetypes = Enum.GetValues<TankArchetype>();
+            TankArchetype archetype = archetypes[_rng.Next(archetypes.Length)];
+            int id = NextId();
+            string name = BotNames[_bots.Count % BotNames.Length];
+
+            Tank bot = _tankAssembler.Assemble(id, $"bot:{id}", name, archetype, RandomPoint());
+            Add(bot);
+            _bots.Add(new BotController(bot, _rng));
+            _eventBus.Notify(new PlayerJoinedEvent(bot));
         }
     }
 
@@ -268,4 +319,7 @@ public sealed class GameWorld
             (float)(_rng.NextDouble() * 2 - 1) * half,
             (float)(_rng.NextDouble() * 2 - 1) * half);
     }
+
+    /// <summary>A spend (<see cref="Stat"/> set) or an undo (<see cref="Stat"/> null) from one connection.</summary>
+    private readonly record struct UpgradeRequest(string ConnectionId, StatKind? Stat);
 }
