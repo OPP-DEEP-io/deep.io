@@ -1,14 +1,20 @@
+using System.Globalization;
 using System.Numerics;
 using DeepIo.Shared;
-using Raylib_cs;
+using DeepIo.Client.Rendering;
 
 namespace DeepIo.Client.Ui;
 
 /// <summary>Collects connection details before the client contacts the game server.</summary>
 public sealed class JoinScreen
 {
+    private readonly IRenderBackend _backend;
+
     private const int MaxNameLength = 20;
     private const int MaxUrlLength = 200;
+    private const int FieldFontSize = 24;
+    private const int LabelFontSize = 18;
+    private const int BuildFontSize = 20;
 
     /// <summary>
     /// The builds offered to the player. Each entry names one Abstract Factory on the server;
@@ -21,25 +27,32 @@ public sealed class JoinScreen
         (TankArchetype.MachineGun, "MACHINE GUN", "fast hull, rapid spray, low damage"),
     };
 
-    private static readonly Color Background = new(24, 25, 34, 255);
-    private static readonly Color Panel = new(35, 37, 49, 255);
-    private static readonly Color Field = new(26, 28, 38, 255);
-    private static readonly Color Border = new(78, 82, 103, 255);
-    private static readonly Color Accent = new(75, 156, 232, 255);
-    private static readonly Color AccentHover = new(91, 171, 245, 255);
-    private static readonly Color Muted = new(154, 158, 178, 255);
-    private static readonly Color Error = new(238, 113, 113, 255);
+    private static readonly RenderColor Background = new(24, 25, 34, 255);
+    private static readonly RenderColor Panel = new(35, 37, 49, 255);
+    private static readonly RenderColor Field = new(26, 28, 38, 255);
+    private static readonly RenderColor Border = new(78, 82, 103, 255);
+    private static readonly RenderColor Accent = new(75, 156, 232, 255);
+    private static readonly RenderColor AccentHover = new(91, 171, 245, 255);
+    private static readonly RenderColor Muted = new(154, 158, 178, 255);
+    private static readonly RenderColor Error = new(238, 113, 113, 255);
 
     private string _playerName;
     private string _serverUrl;
+    private int _nameCaret;
+    private int _urlCaret;
+    private int _nameViewStart;
+    private int _urlViewStart;
     private string? _error;
     private ActiveField _activeField = ActiveField.PlayerName;
     private int _archetypeIndex;
 
-    public JoinScreen(string playerName, string serverUrl)
+    public JoinScreen(string playerName, string serverUrl, IRenderBackend backend)
     {
+        _backend = backend;
         _playerName = Truncate(playerName, MaxNameLength);
         _serverUrl = Truncate(serverUrl, MaxUrlLength);
+        _nameCaret = _playerName.Length;
+        _urlCaret = _serverUrl.Length;
     }
 
     /// <returns>True when the player clicked Join or pressed Enter.</returns>
@@ -49,57 +62,79 @@ public sealed class JoinScreen
             return false;
 
         Layout layout = GetLayout();
-        Vector2 mouse = Raylib.GetMousePosition();
+        Vector2 mouse = _backend.MousePosition;
 
-        if (Raylib.IsMouseButtonPressed(MouseButton.Left))
+        if (_backend.IsPrimaryMouseButtonPressed())
         {
-            if (Raylib.CheckCollisionPointRec(mouse, layout.NameField))
+            if (layout.NameField.Contains(mouse))
+            {
                 _activeField = ActiveField.PlayerName;
-            else if (Raylib.CheckCollisionPointRec(mouse, layout.UrlField))
+                _nameCaret = CaretAtClick(_playerName, ref _nameViewStart, _nameCaret, layout.NameField, mouse.X);
+            }
+            else if (layout.UrlField.Contains(mouse))
+            {
                 _activeField = ActiveField.ServerUrl;
-            else if (Raylib.CheckCollisionPointRec(mouse, layout.JoinButton))
+                _urlCaret = CaretAtClick(_serverUrl, ref _urlViewStart, _urlCaret, layout.UrlField, mouse.X);
+            }
+            else if (layout.JoinButton.Contains(mouse))
                 return true;
 
             for (int i = 0; i < Archetypes.Length; i++)
             {
-                if (Raylib.CheckCollisionPointRec(mouse, ArchetypeButton(layout, i)))
+                if (ArchetypeButton(layout, i).Contains(mouse))
                     _archetypeIndex = i;
             }
         }
 
-        // Arrow keys cycle the build without stealing characters from the text fields.
-        if (Raylib.IsKeyPressed(KeyboardKey.Right))
+        if (PressedOrRepeated(ClientKey.Down))
             _archetypeIndex = (_archetypeIndex + 1) % Archetypes.Length;
-        if (Raylib.IsKeyPressed(KeyboardKey.Left))
+        if (PressedOrRepeated(ClientKey.Up))
             _archetypeIndex = (_archetypeIndex + Archetypes.Length - 1) % Archetypes.Length;
 
-        if (Raylib.IsKeyPressed(KeyboardKey.Tab))
+        if (_backend.IsKeyPressed(ClientKey.Tab))
             _activeField = _activeField == ActiveField.PlayerName
                 ? ActiveField.ServerUrl
                 : ActiveField.PlayerName;
 
         ref string value = ref ActiveValue();
+        ref int caret = ref ActiveCaret();
         int maxLength = _activeField == ActiveField.PlayerName ? MaxNameLength : MaxUrlLength;
 
-        if ((Raylib.IsKeyPressed(KeyboardKey.Backspace) ||
-             Raylib.IsKeyPressedRepeat(KeyboardKey.Backspace)) && value.Length > 0)
+        if (PressedOrRepeated(ClientKey.Left))
+            caret = PreviousBoundary(value, caret);
+        if (PressedOrRepeated(ClientKey.Right))
+            caret = NextBoundary(value, caret);
+        if (_backend.IsKeyPressed(ClientKey.Home))
+            caret = 0;
+        if (_backend.IsKeyPressed(ClientKey.End))
+            caret = value.Length;
+
+        if (PressedOrRepeated(ClientKey.Backspace) && caret > 0)
         {
-            value = value[..^1];
+            int start = PreviousBoundary(value, caret);
+            value = value.Remove(start, caret - start);
+            caret = start;
+            _error = null;
+        }
+        if (PressedOrRepeated(ClientKey.Delete) && caret < value.Length)
+        {
+            value = value.Remove(caret, NextBoundary(value, caret) - caret);
             _error = null;
         }
 
         int codepoint;
-        while ((codepoint = Raylib.GetCharPressed()) > 0)
+        while ((codepoint = _backend.GetCharPressed()) > 0)
         {
             string character = char.ConvertFromUtf32(codepoint);
             if (!char.IsControl(character, 0) && value.Length + character.Length <= maxLength)
             {
-                value += character;
+                value = value.Insert(caret, character);
+                caret += character.Length;
                 _error = null;
             }
         }
 
-        return Raylib.IsKeyPressed(KeyboardKey.Enter);
+        return _backend.IsKeyPressed(ClientKey.Enter);
     }
 
     /// <summary>The build the player picked, passed straight through to the server's Join call.</summary>
@@ -127,6 +162,8 @@ public sealed class JoinScreen
 
         _playerName = playerName;
         _serverUrl = serverUrl;
+        _nameCaret = Math.Min(_nameCaret, _playerName.Length);
+        _urlCaret = Math.Min(_urlCaret, _serverUrl.Length);
         return true;
     }
 
@@ -137,74 +174,76 @@ public sealed class JoinScreen
     public void Draw(bool isConnecting)
     {
         Layout layout = GetLayout();
-        Vector2 mouse = Raylib.GetMousePosition();
-        bool buttonHovered = !isConnecting && Raylib.CheckCollisionPointRec(mouse, layout.JoinButton);
+        Vector2 mouse = _backend.MousePosition;
+        bool buttonHovered = !isConnecting && layout.JoinButton.Contains(mouse);
 
-        Raylib.BeginDrawing();
-        Raylib.ClearBackground(Background);
+        _backend.BeginFrame();
+        _backend.Clear(Background);
 
         DrawBackdrop();
-        Raylib.DrawRectangleRounded(layout.Panel, 0.08f, 10, Panel);
-        Raylib.DrawRectangleRoundedLinesEx(layout.Panel, 0.08f, 10, 1f, Border);
+        _backend.FillRoundedRectangle(layout.Panel, 0.08f, 10, Panel);
+        _backend.OutlineRoundedRectangle(layout.Panel, 0.08f, 10, 1f, Border);
 
-        DrawCentred("deep.io", (int)layout.Panel.Y + 44, 42, Color.RayWhite);
-        DrawCentred("Enter the arena", (int)layout.Panel.Y + 96, 19, Muted);
+        DrawCentred("deep.io", (int)layout.Panel.Y + 44, 42, RenderColor.White, RenderTextStyle.Title);
+        DrawCentred("Enter the arena", (int)layout.Panel.Y + 96, 24, Muted);
 
         DrawLabel("PLAYER NAME", layout.NameField);
-        DrawField(layout.NameField, _playerName, _activeField == ActiveField.PlayerName && !isConnecting);
+        DrawField(layout.NameField, _playerName, _nameCaret, ref _nameViewStart,
+            _activeField == ActiveField.PlayerName && !isConnecting);
 
         DrawLabel("SERVER URL", layout.UrlField);
-        DrawField(layout.UrlField, _serverUrl, _activeField == ActiveField.ServerUrl && !isConnecting);
+        DrawField(layout.UrlField, _serverUrl, _urlCaret, ref _urlViewStart,
+            _activeField == ActiveField.ServerUrl && !isConnecting);
 
         DrawLabel("TANK BUILD", layout.ArchetypeRow);
         for (int i = 0; i < Archetypes.Length; i++)
             DrawArchetypeButton(ArchetypeButton(layout, i), i, mouse, isConnecting);
 
         DrawCentred(Archetypes[_archetypeIndex].Blurb,
-            (int)(layout.ArchetypeRow.Y + layout.ArchetypeRow.Height + 10), 15, Muted);
+            (int)(layout.ArchetypeRow.Y + layout.ArchetypeRow.Height + 10), 19, Muted);
 
-        Color buttonColor = buttonHovered ? AccentHover : Accent;
-        if (isConnecting) buttonColor = new Color(68, 91, 116, 255);
-        Raylib.DrawRectangleRounded(layout.JoinButton, 0.18f, 8, buttonColor);
+        RenderColor buttonColor = buttonHovered ? AccentHover : Accent;
+        if (isConnecting) buttonColor = new RenderColor(68, 91, 116, 255);
+        _backend.FillRoundedRectangle(layout.JoinButton, 0.18f, 8, buttonColor);
         DrawCentred(isConnecting ? "CONNECTING..." : "JOIN GAME",
-            (int)layout.JoinButton.Y + 15, 20, Color.RayWhite);
+            (int)layout.JoinButton.Y + 12, 25, RenderColor.White);
 
         if (_error is not null)
-            DrawCentred(FitText(_error, 480, 16), (int)layout.JoinButton.Y + 70, 16, Error);
+            DrawCentred(FitText(_error, 480, 19), (int)layout.JoinButton.Y + 70, 19, Error);
         else
-            DrawCentred(isConnecting ? "Contacting the game server" : "Enter to join   |   arrows pick a build",
-                (int)layout.JoinButton.Y + 70, 16, Muted);
+            DrawCentred(isConnecting ? "Contacting the game server" : "Tab fields  |  Left/Right caret  |  Up/Down build",
+                (int)layout.JoinButton.Y + 70, 18, Muted);
 
-        Raylib.EndDrawing();
+        _backend.EndFrame();
     }
 
     /// <summary>One third of the build row, with a small gutter between buttons.</summary>
-    private static Rectangle ArchetypeButton(Layout layout, int index)
+    private static RenderRect ArchetypeButton(Layout layout, int index)
     {
         const float gap = 10f;
         float width = (layout.ArchetypeRow.Width - gap * (Archetypes.Length - 1)) / Archetypes.Length;
-        return new Rectangle(
+        return new RenderRect(
             layout.ArchetypeRow.X + index * (width + gap),
             layout.ArchetypeRow.Y,
             width,
             layout.ArchetypeRow.Height);
     }
 
-    private void DrawArchetypeButton(Rectangle bounds, int index, Vector2 mouse, bool isConnecting)
+    private void DrawArchetypeButton(RenderRect bounds, int index, Vector2 mouse, bool isConnecting)
     {
         bool selected = index == _archetypeIndex;
-        bool hovered = !isConnecting && Raylib.CheckCollisionPointRec(mouse, bounds);
+        bool hovered = !isConnecting && bounds.Contains(mouse);
 
-        Color fill = selected ? new Color(45, 74, 105, 255) : Field;
-        if (hovered && !selected) fill = new Color(34, 37, 50, 255);
+        RenderColor fill = selected ? new RenderColor(45, 74, 105, 255) : Field;
+        if (hovered && !selected) fill = new RenderColor(34, 37, 50, 255);
 
-        Raylib.DrawRectangleRounded(bounds, 0.18f, 8, fill);
-        Raylib.DrawRectangleRoundedLinesEx(bounds, 0.18f, 8, selected ? 2f : 1f, selected ? Accent : Border);
+        _backend.FillRoundedRectangle(bounds, 0.18f, 8, fill);
+        _backend.OutlineRoundedRectangle(bounds, 0.18f, 8, selected ? 2f : 1f, selected ? Accent : Border);
 
-        string label = FitText(Archetypes[index].Label, (int)bounds.Width - 12, 15);
-        int textX = (int)(bounds.X + (bounds.Width - Raylib.MeasureText(label, 15)) * 0.5f);
-        int textY = (int)(bounds.Y + (bounds.Height - 15) * 0.5f);
-        Raylib.DrawText(label, textX, textY, 15, selected ? Color.RayWhite : Muted);
+        string label = FitText(Archetypes[index].Label, (int)bounds.Width - 12, BuildFontSize);
+        int textX = (int)(bounds.X + (bounds.Width - _backend.MeasureText(label, BuildFontSize)) * 0.5f);
+        int textY = (int)(bounds.Y + (bounds.Height - BuildFontSize) * 0.5f);
+        _backend.DrawText(label, textX, textY, BuildFontSize, selected ? RenderColor.White : Muted);
     }
 
     private ref string ActiveValue()
@@ -214,89 +253,162 @@ public sealed class JoinScreen
         return ref _serverUrl;
     }
 
-    private static void DrawField(Rectangle bounds, string value, bool active)
+    private ref int ActiveCaret()
     {
-        Raylib.DrawRectangleRounded(bounds, 0.12f, 8, Field);
-        Raylib.DrawRectangleRoundedLinesEx(bounds, 0.12f, 8, active ? 2f : 1f, active ? Accent : Border);
+        if (_activeField == ActiveField.PlayerName)
+            return ref _nameCaret;
+        return ref _urlCaret;
+    }
 
-        string visibleValue = FitTextFromEnd(value, (int)bounds.Width - 32, 19);
-        int textY = (int)(bounds.Y + (bounds.Height - 19) * 0.5f);
-        Raylib.DrawText(visibleValue, (int)bounds.X + 16, textY, 19, Color.RayWhite);
+    private bool PressedOrRepeated(ClientKey key) =>
+        _backend.IsKeyPressed(key) || _backend.IsKeyPressedRepeat(key);
 
-        if (active && (int)(Raylib.GetTime() * 2) % 2 == 0)
+    private void DrawField(RenderRect bounds, string value, int caret, ref int viewStart, bool active)
+    {
+        _backend.FillRoundedRectangle(bounds, 0.12f, 8, Field);
+        _backend.OutlineRoundedRectangle(bounds, 0.12f, 8, active ? 2f : 1f, active ? Accent : Border);
+
+        (int start, int end) = VisibleRange(value, caret, ref viewStart, (int)bounds.Width - 34);
+        string visibleValue = value[start..end];
+        int textY = (int)(bounds.Y + (bounds.Height - FieldFontSize) * 0.5f);
+        _backend.DrawText(visibleValue, (int)bounds.X + 16, textY, FieldFontSize, RenderColor.White);
+
+        if (active && (int)(_backend.Time * 2) % 2 == 0)
         {
-            int cursorX = (int)bounds.X + 16 + Raylib.MeasureText(visibleValue, 19) + 1;
-            Raylib.DrawRectangle(cursorX, (int)bounds.Y + 15, 2, (int)bounds.Height - 30, Accent);
+            int cursorX = (int)bounds.X + 16 + _backend.MeasureText(value[start..caret], FieldFontSize) + 1;
+            _backend.FillRectangle(new RenderRect(cursorX, (int)bounds.Y + 15, 2, (int)bounds.Height - 30), Accent);
         }
     }
 
-    private static void DrawLabel(string text, Rectangle field)
+    private void DrawLabel(string text, RenderRect field)
     {
-        Raylib.DrawText(text, (int)field.X, (int)field.Y - 25, 14, Muted);
+        _backend.DrawText(text, (int)field.X, (int)field.Y - 28, LabelFontSize, Muted);
     }
 
-    private static void DrawCentred(string text, int y, int fontSize, Color color)
+    private void DrawCentred(string text, int y, int fontSize, RenderColor color,
+        RenderTextStyle style = RenderTextStyle.Ui)
     {
-        int x = (Raylib.GetScreenWidth() - Raylib.MeasureText(text, fontSize)) / 2;
-        Raylib.DrawText(text, x, y, fontSize, color);
+        int x = (_backend.ScreenWidth - _backend.MeasureText(text, fontSize, style)) / 2;
+        _backend.DrawText(text, x, y, fontSize, color, style);
     }
 
-    private static void DrawBackdrop()
+    private void DrawBackdrop()
     {
-        int width = Raylib.GetScreenWidth();
-        int height = Raylib.GetScreenHeight();
+        int width = _backend.ScreenWidth;
+        int height = _backend.ScreenHeight;
         const int step = 64;
-        Color grid = new(32, 34, 45, 255);
+        RenderColor grid = new(32, 34, 45, 255);
 
         for (int x = 0; x < width; x += step)
-            Raylib.DrawLine(x, 0, x, height, grid);
+            _backend.DrawLine(new Vector2(x, 0), new Vector2(x, height), 1f, grid);
         for (int y = 0; y < height; y += step)
-            Raylib.DrawLine(0, y, width, y, grid);
+            _backend.DrawLine(new Vector2(0, y), new Vector2(width, y), 1f, grid);
 
-        Raylib.DrawCircle(width / 2 - 290, height / 2 - 210, 58, new Color(214, 178, 70, 28));
-        Raylib.DrawPoly(new Vector2(width / 2 + 310, height / 2 + 210), 3, 74, 12,
-            new Color(225, 101, 108, 24));
+        _backend.DrawCircle(new Vector2(width / 2 - 290, height / 2 - 210), 58, new RenderColor(214, 178, 70, 28));
+        _backend.DrawPolygon(new Vector2(width / 2 + 310, height / 2 + 210), 3, 74, 12,
+            new RenderColor(225, 101, 108, 24));
     }
 
-    private static Layout GetLayout()
+    private Layout GetLayout()
     {
         const float panelWidth = 560;
         const float panelHeight = 620;
-        float panelX = (Raylib.GetScreenWidth() - panelWidth) * 0.5f;
-        float panelY = (Raylib.GetScreenHeight() - panelHeight) * 0.5f;
+        float panelX = (_backend.ScreenWidth - panelWidth) * 0.5f;
+        float panelY = (_backend.ScreenHeight - panelHeight) * 0.5f;
 
         return new Layout(
-            new Rectangle(panelX, panelY, panelWidth, panelHeight),
-            new Rectangle(panelX + 40, panelY + 160, panelWidth - 80, 54),
-            new Rectangle(panelX + 40, panelY + 258, panelWidth - 80, 54),
-            new Rectangle(panelX + 40, panelY + 356, panelWidth - 80, 44),
-            new Rectangle(panelX + 40, panelY + 450, panelWidth - 80, 54));
+            new RenderRect(panelX, panelY, panelWidth, panelHeight),
+            new RenderRect(panelX + 40, panelY + 160, panelWidth - 80, 54),
+            new RenderRect(panelX + 40, panelY + 258, panelWidth - 80, 54),
+            new RenderRect(panelX + 40, panelY + 356, panelWidth - 80, 44),
+            new RenderRect(panelX + 40, panelY + 450, panelWidth - 80, 54));
     }
 
-    private static string FitText(string value, int maxWidth, int fontSize)
+    private string FitText(string value, int maxWidth, int fontSize)
     {
-        if (Raylib.MeasureText(value, fontSize) <= maxWidth)
+        if (_backend.MeasureText(value, fontSize) <= maxWidth)
             return value;
 
         const string suffix = "...";
-        while (value.Length > 0 && Raylib.MeasureText(value + suffix, fontSize) > maxWidth)
+        while (value.Length > 0 && _backend.MeasureText(value + suffix, fontSize) > maxWidth)
             value = value[..^1];
         return value + suffix;
     }
 
-    private static string FitTextFromEnd(string value, int maxWidth, int fontSize)
+    private (int Start, int End) VisibleRange(string value, int caret, ref int viewStart, int maxWidth)
     {
-        if (Raylib.MeasureText(value, fontSize) <= maxWidth)
-            return value;
+        if (_backend.MeasureText(value, FieldFontSize) <= maxWidth)
+            viewStart = 0;
+        if (viewStart > caret)
+            viewStart = caret;
 
-        const string prefix = "...";
-        while (value.Length > 0 && Raylib.MeasureText(prefix + value, fontSize) > maxWidth)
-            value = value[1..];
-        return prefix + value;
+        while (viewStart < caret && _backend.MeasureText(value[viewStart..caret], FieldFontSize) > maxWidth)
+            viewStart = NextBoundary(value, viewStart);
+
+        int end = viewStart;
+        while (end < value.Length)
+        {
+            int next = NextBoundary(value, end);
+            if (_backend.MeasureText(value[viewStart..next], FieldFontSize) > maxWidth)
+                break;
+            end = next;
+        }
+
+        return (viewStart, end);
     }
 
-    private static string Truncate(string value, int maxLength) =>
-        value.Length <= maxLength ? value : value[..maxLength];
+    private int CaretAtClick(string value, ref int viewStart, int caret, RenderRect bounds, float mouseX)
+    {
+        (int start, int end) = VisibleRange(value, caret, ref viewStart, (int)bounds.Width - 34);
+        float x = bounds.X + 16;
+        for (int index = start; index < end;)
+        {
+            int next = NextBoundary(value, index);
+            int leftWidth = _backend.MeasureText(value[start..index], FieldFontSize);
+            int rightWidth = _backend.MeasureText(value[start..next], FieldFontSize);
+            if (mouseX < x + (leftWidth + rightWidth) / 2f)
+                return index;
+            index = next;
+        }
+        return end;
+    }
+
+    private static int PreviousBoundary(string value, int index)
+    {
+        int previous = 0;
+        foreach (int start in StringInfo.ParseCombiningCharacters(value))
+        {
+            if (start >= index)
+                break;
+            previous = start;
+        }
+        return previous;
+    }
+
+    private static int NextBoundary(string value, int index)
+    {
+        foreach (int start in StringInfo.ParseCombiningCharacters(value))
+        {
+            if (start > index)
+                return start;
+        }
+        return value.Length;
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+            return value;
+
+        int end = 0;
+        foreach (int start in StringInfo.ParseCombiningCharacters(value))
+        {
+            if (start > maxLength)
+                break;
+            end = start;
+        }
+        return value[..end];
+    }
 
     private enum ActiveField
     {
@@ -305,9 +417,9 @@ public sealed class JoinScreen
     }
 
     private readonly record struct Layout(
-        Rectangle Panel,
-        Rectangle NameField,
-        Rectangle UrlField,
-        Rectangle ArchetypeRow,
-        Rectangle JoinButton);
+        RenderRect Panel,
+        RenderRect NameField,
+        RenderRect UrlField,
+        RenderRect ArchetypeRow,
+        RenderRect JoinButton);
 }

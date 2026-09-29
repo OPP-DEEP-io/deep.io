@@ -96,7 +96,7 @@ public sealed class GameWorld
     /// </summary>
     public Tank CreateTankForConnection(string connectionId, string name, TankArchetype archetype)
     {
-        Tank tank = _tankAssembler.Assemble(NextId(), connectionId, name, archetype, RandomPoint());
+        Tank tank = _tankAssembler.Assemble(NextId(), connectionId, name, archetype, RandomPoint(Random.Shared));
         _pendingJoins.Enqueue(tank);
         return tank;
     }
@@ -272,7 +272,7 @@ public sealed class GameWorld
                     break;
 
                 case Tank t when t.Dead:
-                    t.Respawn(RandomPoint());
+                    t.Respawn(RandomPoint(_rng));
                     break;
             }
         }
@@ -290,7 +290,7 @@ public sealed class GameWorld
         for (; count < GameConstants.TargetShapeCount; count++)
         {
             // Factory Method: which polygon subclass gets allocated is the creators' business.
-            Shape shape = _shapeSpawner.Spawn(NextId(), RandomPoint(), _rng);
+            Shape shape = _shapeSpawner.Spawn(NextId(), RandomPoint(_rng), _rng);
             Add(shape);
         }
     }
@@ -305,19 +305,19 @@ public sealed class GameWorld
             int id = NextId();
             string name = BotNames[_bots.Count % BotNames.Length];
 
-            Tank bot = _tankAssembler.Assemble(id, $"bot:{id}", name, archetype, RandomPoint());
+            Tank bot = _tankAssembler.Assemble(id, $"bot:{id}", name, archetype, RandomPoint(_rng));
             Add(bot);
             _bots.Add(new BotController(bot, _rng));
             _eventBus.Notify(new PlayerJoinedEvent(bot));
         }
     }
 
-    private Vector2 RandomPoint()
+    private static Vector2 RandomPoint(Random rng)
     {
         float half = GameConstants.ArenaSize * 0.5f - 40f;
         return new Vector2(
-            (float)(_rng.NextDouble() * 2 - 1) * half,
-            (float)(_rng.NextDouble() * 2 - 1) * half);
+            (float)(rng.NextDouble() * 2 - 1) * half,
+            (float)(rng.NextDouble() * 2 - 1) * half);
     }
 
     /// <summary>A spend (<see cref="Stat"/> set) or an undo (<see cref="Stat"/> null) from one connection.</summary>
