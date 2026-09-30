@@ -5,5 +5,12 @@
   <ItemGroup>
     <PackageVersion Include="Raylib-cs" Version="7.0.1" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
+    <PackageVersion Include="SDL3-CS" Version="3.4.16.1" />
+    <PackageVersion Include="SDL3-CS.Linux" Version="3.4.16" />
+    <PackageVersion Include="SDL3-CS.Linux.TTF" Version="3.2.2.11" />
+    <PackageVersion Include="SDL3-CS.Windows" Version="3.4.16" />
+    <PackageVersion Include="SDL3-CS.Windows.TTF" Version="3.2.2.11" />
+    <PackageVersion Include="SDL3-CS.MacOS" Version="3.4.16" />
+    <PackageVersion Include="SDL3-CS.MacOS.TTF" Version="3.2.2.11" />
   </ItemGroup>
 </Project>

@@ -6,6 +6,13 @@
   <ItemGroup>
     <PackageReference Include="Raylib-cs" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="SDL3-CS" />
+    <PackageReference Include="SDL3-CS.Linux" />
+    <PackageReference Include="SDL3-CS.Linux.TTF" />
+    <PackageReference Include="SDL3-CS.Windows" />
+    <PackageReference Include="SDL3-CS.Windows.TTF" />
+    <PackageReference Include="SDL3-CS.MacOS" />
+    <PackageReference Include="SDL3-CS.MacOS.TTF" />
   </ItemGroup>
 
   <ItemGroup>

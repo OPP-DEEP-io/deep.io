@@ -6,9 +6,8 @@ using DeepIo.Client.Rendering;
 namespace DeepIo.Client.Ui;
 
 /// <summary>Collects connection details before the client contacts the game server.</summary>
-public sealed class JoinScreen
+public sealed class JoinScreen : ClientView<bool>
 {
-    private readonly IRenderBackend _backend;
 
     private const int MaxNameLength = 20;
     private const int MaxUrlLength = 200;
@@ -46,9 +45,8 @@ public sealed class JoinScreen
     private ActiveField _activeField = ActiveField.PlayerName;
     private int _archetypeIndex;
 
-    public JoinScreen(string playerName, string serverUrl, IRenderBackend backend)
+    public JoinScreen(string playerName, string serverUrl, IRenderBackend backend) : base(backend)
     {
-        _backend = backend;
         _playerName = Truncate(playerName, MaxNameLength);
         _serverUrl = Truncate(serverUrl, MaxUrlLength);
         _nameCaret = _playerName.Length;
@@ -62,9 +60,9 @@ public sealed class JoinScreen
             return false;
 
         Layout layout = GetLayout();
-        Vector2 mouse = _backend.MousePosition;
+        Vector2 mouse = Backend.MousePosition;
 
-        if (_backend.IsPrimaryMouseButtonPressed())
+        if (Backend.IsPrimaryMouseButtonPressed())
         {
             if (layout.NameField.Contains(mouse))
             {
@@ -91,7 +89,7 @@ public sealed class JoinScreen
         if (PressedOrRepeated(ClientKey.Up))
             _archetypeIndex = (_archetypeIndex + Archetypes.Length - 1) % Archetypes.Length;
 
-        if (_backend.IsKeyPressed(ClientKey.Tab))
+        if (Backend.IsKeyPressed(ClientKey.Tab))
             _activeField = _activeField == ActiveField.PlayerName
                 ? ActiveField.ServerUrl
                 : ActiveField.PlayerName;
@@ -104,9 +102,9 @@ public sealed class JoinScreen
             caret = PreviousBoundary(value, caret);
         if (PressedOrRepeated(ClientKey.Right))
             caret = NextBoundary(value, caret);
-        if (_backend.IsKeyPressed(ClientKey.Home))
+        if (Backend.IsKeyPressed(ClientKey.Home))
             caret = 0;
-        if (_backend.IsKeyPressed(ClientKey.End))
+        if (Backend.IsKeyPressed(ClientKey.End))
             caret = value.Length;
 
         if (PressedOrRepeated(ClientKey.Backspace) && caret > 0)
@@ -123,7 +121,7 @@ public sealed class JoinScreen
         }
 
         int codepoint;
-        while ((codepoint = _backend.GetCharPressed()) > 0)
+        while ((codepoint = Backend.GetCharPressed()) > 0)
         {
             string character = char.ConvertFromUtf32(codepoint);
             if (!char.IsControl(character, 0) && value.Length + character.Length <= maxLength)
@@ -134,7 +132,7 @@ public sealed class JoinScreen
             }
         }
 
-        return _backend.IsKeyPressed(ClientKey.Enter);
+        return Backend.IsKeyPressed(ClientKey.Enter);
     }
 
     /// <summary>The build the player picked, passed straight through to the server's Join call.</summary>
@@ -171,18 +169,18 @@ public sealed class JoinScreen
 
     public void ClearError() => _error = null;
 
-    public void Draw(bool isConnecting)
+    public override void Draw(bool isConnecting)
     {
         Layout layout = GetLayout();
-        Vector2 mouse = _backend.MousePosition;
+        Vector2 mouse = Backend.MousePosition;
         bool buttonHovered = !isConnecting && layout.JoinButton.Contains(mouse);
 
-        _backend.BeginFrame();
-        _backend.Clear(Background);
+        Backend.BeginFrame();
+        Backend.Clear(Background);
 
         DrawBackdrop();
-        _backend.FillRoundedRectangle(layout.Panel, 0.08f, 10, Panel);
-        _backend.OutlineRoundedRectangle(layout.Panel, 0.08f, 10, 1f, Border);
+        Backend.FillRoundedRectangle(layout.Panel, 0.08f, 10, Panel);
+        Backend.OutlineRoundedRectangle(layout.Panel, 0.08f, 10, 1f, Border);
 
         DrawCentred("deep.io", (int)layout.Panel.Y + 44, 42, RenderColor.White, RenderTextStyle.Title);
         DrawCentred("Enter the arena", (int)layout.Panel.Y + 96, 24, Muted);
@@ -204,7 +202,7 @@ public sealed class JoinScreen
 
         RenderColor buttonColor = buttonHovered ? AccentHover : Accent;
         if (isConnecting) buttonColor = new RenderColor(68, 91, 116, 255);
-        _backend.FillRoundedRectangle(layout.JoinButton, 0.18f, 8, buttonColor);
+        Backend.FillRoundedRectangle(layout.JoinButton, 0.18f, 8, buttonColor);
         DrawCentred(isConnecting ? "CONNECTING..." : "JOIN GAME",
             (int)layout.JoinButton.Y + 12, 25, RenderColor.White);
 
@@ -214,7 +212,7 @@ public sealed class JoinScreen
             DrawCentred(isConnecting ? "Contacting the game server" : "Tab fields  |  Left/Right caret  |  Up/Down build",
                 (int)layout.JoinButton.Y + 70, 18, Muted);
 
-        _backend.EndFrame();
+        Backend.EndFrame();
     }
 
     /// <summary>One third of the build row, with a small gutter between buttons.</summary>
@@ -237,13 +235,13 @@ public sealed class JoinScreen
         RenderColor fill = selected ? new RenderColor(45, 74, 105, 255) : Field;
         if (hovered && !selected) fill = new RenderColor(34, 37, 50, 255);
 
-        _backend.FillRoundedRectangle(bounds, 0.18f, 8, fill);
-        _backend.OutlineRoundedRectangle(bounds, 0.18f, 8, selected ? 2f : 1f, selected ? Accent : Border);
+        Backend.FillRoundedRectangle(bounds, 0.18f, 8, fill);
+        Backend.OutlineRoundedRectangle(bounds, 0.18f, 8, selected ? 2f : 1f, selected ? Accent : Border);
 
         string label = FitText(Archetypes[index].Label, (int)bounds.Width - 12, BuildFontSize);
-        int textX = (int)(bounds.X + (bounds.Width - _backend.MeasureText(label, BuildFontSize)) * 0.5f);
+        int textX = (int)(bounds.X + (bounds.Width - Backend.MeasureText(label, BuildFontSize)) * 0.5f);
         int textY = (int)(bounds.Y + (bounds.Height - BuildFontSize) * 0.5f);
-        _backend.DrawText(label, textX, textY, BuildFontSize, selected ? RenderColor.White : Muted);
+        Backend.DrawText(label, textX, textY, BuildFontSize, selected ? RenderColor.White : Muted);
     }
 
     private ref string ActiveValue()
@@ -261,51 +259,51 @@ public sealed class JoinScreen
     }
 
     private bool PressedOrRepeated(ClientKey key) =>
-        _backend.IsKeyPressed(key) || _backend.IsKeyPressedRepeat(key);
+        Backend.IsKeyPressed(key) || Backend.IsKeyPressedRepeat(key);
 
     private void DrawField(RenderRect bounds, string value, int caret, ref int viewStart, bool active)
     {
-        _backend.FillRoundedRectangle(bounds, 0.12f, 8, Field);
-        _backend.OutlineRoundedRectangle(bounds, 0.12f, 8, active ? 2f : 1f, active ? Accent : Border);
+        Backend.FillRoundedRectangle(bounds, 0.12f, 8, Field);
+        Backend.OutlineRoundedRectangle(bounds, 0.12f, 8, active ? 2f : 1f, active ? Accent : Border);
 
         (int start, int end) = VisibleRange(value, caret, ref viewStart, (int)bounds.Width - 34);
         string visibleValue = value[start..end];
         int textY = (int)(bounds.Y + (bounds.Height - FieldFontSize) * 0.5f);
-        _backend.DrawText(visibleValue, (int)bounds.X + 16, textY, FieldFontSize, RenderColor.White);
+        Backend.DrawText(visibleValue, (int)bounds.X + 16, textY, FieldFontSize, RenderColor.White);
 
-        if (active && (int)(_backend.Time * 2) % 2 == 0)
+        if (active && (int)(Backend.Time * 2) % 2 == 0)
         {
-            int cursorX = (int)bounds.X + 16 + _backend.MeasureText(value[start..caret], FieldFontSize) + 1;
-            _backend.FillRectangle(new RenderRect(cursorX, (int)bounds.Y + 15, 2, (int)bounds.Height - 30), Accent);
+            int cursorX = (int)bounds.X + 16 + Backend.MeasureText(value[start..caret], FieldFontSize) + 1;
+            Backend.FillRectangle(new RenderRect(cursorX, (int)bounds.Y + 15, 2, (int)bounds.Height - 30), Accent);
         }
     }
 
     private void DrawLabel(string text, RenderRect field)
     {
-        _backend.DrawText(text, (int)field.X, (int)field.Y - 28, LabelFontSize, Muted);
+        Backend.DrawText(text, (int)field.X, (int)field.Y - 28, LabelFontSize, Muted);
     }
 
     private void DrawCentred(string text, int y, int fontSize, RenderColor color,
         RenderTextStyle style = RenderTextStyle.Ui)
     {
-        int x = (_backend.ScreenWidth - _backend.MeasureText(text, fontSize, style)) / 2;
-        _backend.DrawText(text, x, y, fontSize, color, style);
+        int x = (Backend.ScreenWidth - Backend.MeasureText(text, fontSize, style)) / 2;
+        Backend.DrawText(text, x, y, fontSize, color, style);
     }
 
     private void DrawBackdrop()
     {
-        int width = _backend.ScreenWidth;
-        int height = _backend.ScreenHeight;
+        int width = Backend.ScreenWidth;
+        int height = Backend.ScreenHeight;
         const int step = 64;
         RenderColor grid = new(32, 34, 45, 255);
 
         for (int x = 0; x < width; x += step)
-            _backend.DrawLine(new Vector2(x, 0), new Vector2(x, height), 1f, grid);
+            Backend.DrawLine(new Vector2(x, 0), new Vector2(x, height), 1f, grid);
         for (int y = 0; y < height; y += step)
-            _backend.DrawLine(new Vector2(0, y), new Vector2(width, y), 1f, grid);
+            Backend.DrawLine(new Vector2(0, y), new Vector2(width, y), 1f, grid);
 
-        _backend.DrawCircle(new Vector2(width / 2 - 290, height / 2 - 210), 58, new RenderColor(214, 178, 70, 28));
-        _backend.DrawPolygon(new Vector2(width / 2 + 310, height / 2 + 210), 3, 74, 12,
+        Backend.DrawCircle(new Vector2(width / 2 - 290, height / 2 - 210), 58, new RenderColor(214, 178, 70, 28));
+        Backend.DrawPolygon(new Vector2(width / 2 + 310, height / 2 + 210), 3, 74, 12,
             new RenderColor(225, 101, 108, 24));
     }
 
@@ -313,8 +311,8 @@ public sealed class JoinScreen
     {
         const float panelWidth = 560;
         const float panelHeight = 620;
-        float panelX = (_backend.ScreenWidth - panelWidth) * 0.5f;
-        float panelY = (_backend.ScreenHeight - panelHeight) * 0.5f;
+        float panelX = (Backend.ScreenWidth - panelWidth) * 0.5f;
+        float panelY = (Backend.ScreenHeight - panelHeight) * 0.5f;
 
         return new Layout(
             new RenderRect(panelX, panelY, panelWidth, panelHeight),
@@ -326,30 +324,30 @@ public sealed class JoinScreen
 
     private string FitText(string value, int maxWidth, int fontSize)
     {
-        if (_backend.MeasureText(value, fontSize) <= maxWidth)
+        if (Backend.MeasureText(value, fontSize) <= maxWidth)
             return value;
 
         const string suffix = "...";
-        while (value.Length > 0 && _backend.MeasureText(value + suffix, fontSize) > maxWidth)
+        while (value.Length > 0 && Backend.MeasureText(value + suffix, fontSize) > maxWidth)
             value = value[..^1];
         return value + suffix;
     }
 
     private (int Start, int End) VisibleRange(string value, int caret, ref int viewStart, int maxWidth)
     {
-        if (_backend.MeasureText(value, FieldFontSize) <= maxWidth)
+        if (Backend.MeasureText(value, FieldFontSize) <= maxWidth)
             viewStart = 0;
         if (viewStart > caret)
             viewStart = caret;
 
-        while (viewStart < caret && _backend.MeasureText(value[viewStart..caret], FieldFontSize) > maxWidth)
+        while (viewStart < caret && Backend.MeasureText(value[viewStart..caret], FieldFontSize) > maxWidth)
             viewStart = NextBoundary(value, viewStart);
 
         int end = viewStart;
         while (end < value.Length)
         {
             int next = NextBoundary(value, end);
-            if (_backend.MeasureText(value[viewStart..next], FieldFontSize) > maxWidth)
+            if (Backend.MeasureText(value[viewStart..next], FieldFontSize) > maxWidth)
                 break;
             end = next;
         }
@@ -364,8 +362,8 @@ public sealed class JoinScreen
         for (int index = start; index < end;)
         {
             int next = NextBoundary(value, index);
-            int leftWidth = _backend.MeasureText(value[start..index], FieldFontSize);
-            int rightWidth = _backend.MeasureText(value[start..next], FieldFontSize);
+            int leftWidth = Backend.MeasureText(value[start..index], FieldFontSize);
+            int rightWidth = Backend.MeasureText(value[start..next], FieldFontSize);
             if (mouseX < x + (leftWidth + rightWidth) / 2f)
                 return index;
             index = next;

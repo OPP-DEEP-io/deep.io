@@ -3,9 +3,7 @@ using System.Numerics;
 namespace DeepIo.Client.Rendering;
 
 /// <summary>
-/// Hand-rolled world->screen transform. raylib's Camera2D / BeginMode2D / GetScreenToWorld2D
-/// are deliberately not used — camera is implemented in this project.
-/// assignment. ~15 lines of maths.
+/// World-to-screen transform shared by both rendering backends.
 /// </summary>
 public sealed class Camera
 {

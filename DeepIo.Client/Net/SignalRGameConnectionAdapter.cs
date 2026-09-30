@@ -6,13 +6,13 @@ namespace DeepIo.Client.Net;
 /// <summary>
 /// Adapts SignalR's hub calls and callbacks to game connection operations.
 ///
-/// SignalR raises "Snapshot" on a background thread, while raylib runs on the main thread.
-/// An atomic latest-snapshot slot transfers state without retaining stale broadcasts.
+/// SignalR raises "Snapshot" on a background thread, while rendering runs on the main thread.
+/// SnapshotMailbox transfers newest state without retaining stale broadcasts.
 /// </summary>
 public sealed class SignalRGameConnectionAdapter : IGameConnection
 {
     private readonly HubConnection _conn;
-    private Snapshot? _latestSnapshot;
+    private readonly SnapshotMailbox _snapshots = new();
 
     public event Action? Reconnecting;
     public event Func<Task>? Reconnected;
@@ -25,7 +25,7 @@ public sealed class SignalRGameConnectionAdapter : IGameConnection
             .WithAutomaticReconnect()
             .Build();
 
-        _conn.On<Snapshot>("Snapshot", snapshot => Interlocked.Exchange(ref _latestSnapshot, snapshot));
+        _conn.On<Snapshot>("Snapshot", _snapshots.Publish);
         _conn.Reconnecting += _ =>
         {
             Reconnecting?.Invoke();
@@ -61,7 +61,7 @@ public sealed class SignalRGameConnectionAdapter : IGameConnection
     /// Returns and clears the most recent snapshot.
     /// Current client renders this state directly; interpolation could retain two snapshots later.
     /// </summary>
-    public Snapshot? TakeLatest() => Interlocked.Exchange(ref _latestSnapshot, null);
+    public Snapshot? TakeLatest() => _snapshots.TakeLatest();
 
     public async ValueTask DisposeAsync() => await _conn.DisposeAsync();
 }
