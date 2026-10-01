@@ -4,7 +4,7 @@ using DeepIo.Client.Ui;
 
 const int screenW = 1920;
 const int screenH = 1080;
-const string defaultServerUrl = "http://localhost:5000/game";
+const string defaultServerUrl = "https://deepio.linux123123.com/game";
 
 // Optional form defaults remain positional; --backend selects rendering implementation.
 string backendName = "raylib";
