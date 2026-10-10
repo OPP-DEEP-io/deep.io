@@ -214,6 +214,9 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
         int x = 20;
         int y = Backend.ScreenHeight - 20 - rowH * (StatLabels.Length + 1);
 
+        string modifications = me.Mods ?? "Chassis perks: Armor Lv 5, Regen Lv 10, Turbo Lv 15";
+        Backend.DrawText(modifications, x, y - rowH, 17, PipFull);
+
         string header = me.Pts > 0 ? $"Level {me.Lvl}   -   {me.Pts} point(s) to spend" : $"Level {me.Lvl}";
         Backend.DrawText(header, x, y, 22, me.Pts > 0 ? PipFull : RenderColor.White);
         y += rowH + 6;

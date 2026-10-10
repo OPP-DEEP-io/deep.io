@@ -49,6 +49,9 @@ public sealed record EntityDto
 
     /// <summary>Movement strategy currently driving a bot ("Chase", "Flee", ...); null for humans.</summary>
     public string? Ai { get; init; }
+
+    /// <summary>Active chassis decoration chain (tanks only); null below level five.</summary>
+    public string? Mods { get; init; }
 }
 
 public sealed record LeaderboardEntry

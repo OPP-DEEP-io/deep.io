@@ -1,6 +1,7 @@
 using System.Numerics;
 using DeepIo.Server.Commands;
 using DeepIo.Server.Entities.Parts;
+using DeepIo.Server.Prototypes;
 using DeepIo.Shared;
 
 namespace DeepIo.Server.Entities;
@@ -17,11 +18,13 @@ namespace DeepIo.Server.Entities;
 /// <see cref="RotateCommand"/>, <see cref="FireCommand"/>, <see cref="UpgradeStatCommand"/>)
 /// run through its two <see cref="CommandHistory"/> invokers; the tank is their receiver.
 /// </summary>
-public sealed class Tank : Entity
+public sealed class Tank : Entity, IPrototype<Tank>
 {
     private const int InputHistorySize = 64;
 
-    public required IChassis Chassis { get; init; }
+    public required IChassis BaseChassis { get; init; }
+    private IChassis? _chassis;
+    public IChassis Chassis => _chassis ?? BaseChassis;
     public required IWeapon Weapon { get; init; }
     public required IProjectileSpec Round { get; init; }
     public required TankArchetype Archetype { get; init; }
@@ -43,13 +46,33 @@ public sealed class Tank : Entity
 
     public int Level { get; private set; } = 1;
     public int SkillPoints { get; private set; }
-    public TankStats Stats { get; } = new();
+    public TankStats Stats { get; private set; } = new();
 
     /// <summary>Recent move/aim/trigger commands (ring buffer).</summary>
-    public CommandHistory InputHistory { get; } = new(InputHistorySize);
+    public CommandHistory InputHistory { get; private set; } = new(InputHistorySize);
 
     /// <summary>Stat upgrades, newest last. <c>UpgradeHistory.Undo()</c> is a one-point respec.</summary>
-    public CommandHistory UpgradeHistory { get; } = new(GameConstants.MaxLevel);
+    public CommandHistory UpgradeHistory { get; private set; } = new(GameConstants.MaxLevel);
+
+    /// <summary>
+    /// Shallow copies share mutable stats and histories (demonstration only). Deep copies
+    /// own their stat array and fresh histories: commands hold references to their receiver
+    /// and must not be copied to a new tank. Immutable parts and the event bus are shared.
+    /// Identity is preserved here; the spawn registry assigns a new world id.
+    /// </summary>
+    public Tank Clone(CopyDepth depth = CopyDepth.Deep)
+    {
+        if (depth is not (CopyDepth.Shallow or CopyDepth.Deep))
+            throw new ArgumentOutOfRangeException(nameof(depth));
+        var copy = (Tank)MemberwiseClone();
+        if (depth == CopyDepth.Deep)
+        {
+            copy.Stats = Stats.DeepCopy();
+            copy.InputHistory = new CommandHistory(InputHistory.Capacity);
+            copy.UpgradeHistory = new CommandHistory(UpgradeHistory.Capacity);
+        }
+        return copy;
+    }
 
     public override string Kind => "tank";
 
@@ -89,6 +112,8 @@ public sealed class Tank : Entity
 
         SkillPoints += reached - Level;
         Level = reached;
+        _chassis = ChassisUpgrades.ForLevel(BaseChassis, Level);
+        ApplyStats();
     }
 
     /// <summary>Receiver side of <see cref="UpgradeStatCommand.Execute"/>.</summary>
@@ -124,6 +149,7 @@ public sealed class Tank : Entity
         UpgradeHistory.Clear();
         InputHistory.Clear();
 
+        _chassis = ChassisUpgrades.ForLevel(BaseChassis, Level);
         MaxHp = Chassis.MaxHp;
         Hp = MaxHp;
         Position = position;
@@ -151,5 +177,6 @@ public sealed class Tank : Entity
         Pts = SkillPoints,
         Up = Stats.ToArray(),
         Ai = AiLabel,
+        Mods = Chassis is ChassisDecorator ? Chassis.Name : null,
     };
 }

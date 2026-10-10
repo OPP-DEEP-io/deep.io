@@ -4,14 +4,21 @@ namespace DeepIo.Server.Entities;
 
 /// <summary>
 /// How many skill points a tank has put into each <see cref="StatKind"/>, and the modifiers
-/// those levels translate into. All levels at 0 means the tank behaves exactly like the bare
-/// parts its Abstract Factory produced.
+/// those levels translate into. All levels at 0 means neutral skill-point modifiers;
+/// automatic chassis decorations are applied independently by the tank.
 /// </summary>
 public sealed class TankStats
 {
     private static readonly int StatCount = Enum.GetValues<StatKind>().Length;
 
-    private readonly int[] _levels = new int[StatCount];
+    private int[] _levels = new int[StatCount];
+
+    public TankStats DeepCopy()
+    {
+        var copy = (TankStats)MemberwiseClone();
+        copy._levels = (int[])_levels.Clone();
+        return copy;
+    }
 
     public int this[StatKind stat] => _levels[(int)stat];
 

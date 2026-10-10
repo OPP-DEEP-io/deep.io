@@ -1,15 +1,15 @@
 using System.Numerics;
+using DeepIo.Server.Builders;
 using DeepIo.Server.Entities;
-using DeepIo.Server.Entities.Parts;
 using DeepIo.Shared;
 
 namespace DeepIo.Server.Factories;
 
 /// <summary>
-/// The Abstract Factory client. It resolves the archetype a player picked to one concrete
-/// <see cref="ITankPartsFactory"/> and assembles a <see cref="Tank"/> purely from the
-/// interfaces — it never mentions <c>LightChassis</c>, <c>LongBarrel</c> or any other
-/// concrete part, so a new build only means a new factory in the registry below.
+/// Builder director and Abstract Factory client. It resolves the archetype to one
+/// <see cref="ITankPartsFactory"/> and runs the same construction steps with either a
+/// player or bot builder. Builders request parts through interfaces, so this director
+/// never names a concrete chassis, weapon, or projectile.
 /// </summary>
 public sealed class TankAssembler
 {
@@ -37,28 +37,24 @@ public sealed class TankAssembler
             ? factory
             : _factories[TankArchetype.Basic];
 
-    /// <summary>Builds a spawn-ready tank from one consistent family of parts.</summary>
+    /// <summary>Director: executes the same steps with the player builder.</summary>
     public Tank Assemble(int id, string connectionId, string name, TankArchetype archetype, Vector2 position)
     {
         ITankPartsFactory factory = Resolve(archetype);
-
-        IChassis chassis = factory.CreateChassis();
-        IWeapon weapon = factory.CreateWeapon();
-        IProjectileSpec round = factory.CreateProjectile();
-
-        return new Tank
-        {
-            Id = id,
-            Chassis = chassis,
-            Weapon = weapon,
-            Round = round,
-            Archetype = factory.Archetype,
-            Name = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim(),
-            ConnectionId = connectionId,
-            Position = position,
-            Radius = chassis.Radius,
-            Hp = chassis.MaxHp,
-            MaxHp = chassis.MaxHp,
-        };
+        return Construct(new PlayerTankBuilder(factory), id, connectionId, name, position);
     }
+
+    /// <summary>Director: executes the same steps with the trained bot builder.</summary>
+    public Tank AssembleBot(int id, string connectionId, string name, TankArchetype archetype, Vector2 position)
+    {
+        ITankPartsFactory factory = Resolve(archetype);
+        return Construct(new BotTankBuilder(factory), id, connectionId, name, position);
+    }
+
+    private static Tank Construct(ITankBuilder builder, int id, string connectionId, string name, Vector2 position) =>
+        builder.Start(id, connectionId, name, position)
+            .AssembleBody()
+            .AddWeapon()
+            .LoadProjectile()
+            .Build();
 }
