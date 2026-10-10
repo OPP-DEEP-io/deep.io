@@ -1,5 +1,12 @@
+using DeepIo.Server.Diagnostics;
 using DeepIo.Server.Net;
 using DeepIo.Server.World;
+
+if (args.Contains("--patterns-demo", StringComparer.Ordinal))
+{
+    PatternDemo.Run();
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 

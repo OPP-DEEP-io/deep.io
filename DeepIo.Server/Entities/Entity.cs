@@ -12,7 +12,11 @@ namespace DeepIo.Server.Entities;
 /// </summary>
 public abstract class Entity
 {
-    public int Id { get; init; }
+    private int _id;
+    public int Id { get => _id; init => _id = value; }
+
+    // Only the prototype spawn path reassigns identity before insertion into the world.
+    internal void AssignSpawnId(int id) => _id = id;
     public Vector2 Position;
     public Vector2 Velocity;
     public float Radius;

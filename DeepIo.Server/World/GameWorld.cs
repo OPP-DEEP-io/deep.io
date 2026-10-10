@@ -7,6 +7,7 @@ using DeepIo.Server.Entities;
 using DeepIo.Server.Events;
 using DeepIo.Server.Events.Observers;
 using DeepIo.Server.Factories;
+using DeepIo.Server.Prototypes;
 using DeepIo.Shared;
 
 namespace DeepIo.Server.World;
@@ -47,6 +48,7 @@ public sealed class GameWorld
     // Object creation is delegated to the factories; the world never news up a Shape or Tank.
     private readonly ShapeSpawner _shapeSpawner = new();
     private readonly TankAssembler _tankAssembler = new();
+    private readonly TankPrototypeRegistry _botPrototypes;
 
     // Observer: entities publish hits and kills on this bus. Everything that reacts to them
     // (XP, leaderboard, achievements, kill feed) is an attached observer, not code in the tick.
@@ -69,6 +71,7 @@ public sealed class GameWorld
     /// <summary>Private: the only way to a world is <see cref="Instance"/>.</summary>
     private GameWorld()
     {
+        _botPrototypes = new TankPrototypeRegistry(_tankAssembler);
         // The feed goes first: observers below publish follow-up events (level-ups,
         // achievements) mid-notification, and the feed should list the cause before them.
         _eventBus.Attach(_feed);
@@ -299,13 +302,13 @@ public sealed class GameWorld
     {
         while (_bots.Count < GameConstants.BotCount)
         {
-            // Bots are built by the same Abstract Factory path as players, with a random build.
+            // Prototype: copy a bot configured once by Builder + Abstract Factory.
             var archetypes = Enum.GetValues<TankArchetype>();
             TankArchetype archetype = archetypes[_rng.Next(archetypes.Length)];
             int id = NextId();
             string name = BotNames[_bots.Count % BotNames.Length];
 
-            Tank bot = _tankAssembler.Assemble(id, $"bot:{id}", name, archetype, RandomPoint(_rng));
+            Tank bot = _botPrototypes.Spawn(id, name, archetype, RandomPoint(_rng));
             Add(bot);
             _bots.Add(new BotController(bot, _rng));
             _eventBus.Notify(new PlayerJoinedEvent(bot));
