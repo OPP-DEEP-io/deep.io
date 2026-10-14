@@ -6,116 +6,52 @@ using DeepIo.Shared;
 namespace DeepIo.Server.Ai;
 
 /// <summary>
-/// Strategy context. Drives one bot tank: every think step it looks at the arena, picks the
-/// <see cref="IMovementStrategy"/> that fits (HP, level gap, what is nearby), and turns the
-/// result into the same commands a human's input becomes. Swapping strategies is one
-/// assignment to <see cref="Current"/>; no movement logic lives here.
+/// Strategy context. Drives one bot tank through a single <see cref="IMovementStrategy"/> slot:
+/// whoever owns the controller (the <see cref="BotBrain"/>) plugs a strategy in with
+/// <see cref="SetStrategy"/>, and <see cref="Act"/> turns its answer into the same commands a
+/// human's input becomes. The controller knows only the interface: it never creates a concrete
+/// strategy and never decides which one to use.
 /// </summary>
 public sealed class BotController
 {
-    public const float ThinkInterval = 0.05f;   // seconds between decisions
-
-    private const float EngageRange = 650f;
-    private const float FarmRange = 900f;
-    private const float FleeHpFraction = 0.35f;
-    private const int OutLevelledBy = 6;
     private const float AimError = 0.08f;       // radians, so bots are beatable
 
     private readonly Random _rng;
-    private readonly IMovementStrategy _chase;
-    private readonly IMovementStrategy _flee;
-    private readonly IMovementStrategy _orbit;
-    private readonly IMovementStrategy _farm;
-    private readonly IMovementStrategy _patrol;
     private readonly StatKind[] _upgradeOrder;
-    private float _thinkTimer;
 
-    public BotController(Tank tank, Random rng)
+    public BotController(Tank tank, IMovementStrategy initialStrategy, Random rng)
     {
         Tank = tank;
         _rng = rng;
-        _chase = new ChaseNearestTargetStrategy();
-        _flee = new FleeWhenLowHpStrategy();
-        _orbit = new OrbitTargetStrategy(rng);
-        _farm = new FarmShapesStrategy();
-        _patrol = new PatrolWaypointsStrategy(rng);
         _upgradeOrder = UpgradeOrderFor(tank.Archetype);
-        Current = _patrol;
+        SetStrategy(initialStrategy);
     }
 
     public Tank Tank { get; }
 
-    public IMovementStrategy Current { get; private set; }
+    public IMovementStrategy Current { get; private set; } = null!;
 
-    public void Update(float dt, IReadOnlyList<Tank> tanks, IReadOnlyList<Shape> shapes)
+    /// <summary>Swaps the movement algorithm at runtime; the next <see cref="Act"/> uses it.</summary>
+    public void SetStrategy(IMovementStrategy strategy)
     {
-        if (Tank.Dead) return;
+        Current = strategy ?? throw new ArgumentNullException(nameof(strategy));
+        Tank.AiLabel = strategy.Name;
+    }
 
-        _thinkTimer -= dt;
-        if (_thinkTimer > 0f) return;
-        _thinkTimer = ThinkInterval;
-
-        BotContext ctx = Observe(tanks, shapes);
-
-        Current = SelectStrategy(ctx);
-        Tank.AiLabel = Current.Name;
-
+    /// <summary>One think step: move with the current strategy, then aim, fire and spend points.</summary>
+    public void Act(BotContext ctx)
+    {
         Tank.InputHistory.Execute(new MoveCommand(Tank, Current.ComputeVelocity(ctx)));
         AimAndFire(ctx);
         SpendSkillPoints();
-    }
-
-    /// <summary>The runtime swap: which strategy drives the bot is decided here and only here.</summary>
-    private IMovementStrategy SelectStrategy(BotContext ctx)
-    {
-        if (ctx.NearestEnemy is { } enemy && ctx.EnemyDistance < EngageRange)
-        {
-            bool outmatched = enemy.Level >= Tank.Level + OutLevelledBy;
-            if (ctx.HpFraction < FleeHpFraction || outmatched) return _flee;
-            return Tank.Archetype == TankArchetype.Sniper ? _orbit : _chase;
-        }
-
-        if (ctx.NearestShape is not null && ctx.ShapeDistance < FarmRange) return _farm;
-
-        return _patrol;
-    }
-
-    private BotContext Observe(IReadOnlyList<Tank> tanks, IReadOnlyList<Shape> shapes)
-    {
-        Tank? enemy = null;
-        float enemyDist = float.PositiveInfinity;
-        foreach (Tank t in tanks)
-        {
-            if (t == Tank || t.Dead) continue;
-            float d = Vector2.Distance(Tank.Position, t.Position);
-            if (d < enemyDist) (enemy, enemyDist) = (t, d);
-        }
-
-        Shape? shape = null;
-        float shapeDist = float.PositiveInfinity;
-        foreach (Shape s in shapes)
-        {
-            if (s.Dead) continue;
-            float d = Vector2.Distance(Tank.Position, s.Position);
-            if (d < shapeDist) (shape, shapeDist) = (s, d);
-        }
-
-        return new BotContext
-        {
-            Self = Tank,
-            NearestEnemy = enemy,
-            EnemyDistance = enemyDist,
-            NearestShape = shape,
-            ShapeDistance = shapeDist,
-        };
     }
 
     /// <summary>Shoots at an enemy in range, otherwise at the nearest shape, with a little aim error.</summary>
     private void AimAndFire(BotContext ctx)
     {
         Entity? target =
-            ctx.NearestEnemy is not null && ctx.EnemyDistance < EngageRange ? ctx.NearestEnemy
-            : ctx.NearestShape is not null && ctx.ShapeDistance < FarmRange ? ctx.NearestShape
+            ctx.EnemyInRange ? ctx.NearestEnemy
+            : ctx.ShapeInRange ? ctx.NearestShape
             : null;
 
         if (target is null)

@@ -60,7 +60,7 @@ public sealed class GameWorld
 
     // Strategy: one controller per bot, each swapping movement strategies at runtime.
     private static readonly string[] BotNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta", "Bot Echo", "Bot Foxtrot"];
-    private readonly List<BotController> _bots = new();
+    private readonly List<BotBrain> _bots = new();
     private readonly List<Tank> _tankView = new();
     private readonly List<Shape> _shapeView = new();
 
@@ -310,7 +310,8 @@ public sealed class GameWorld
 
             Tank bot = _botPrototypes.Spawn(id, name, archetype, RandomPoint(_rng));
             Add(bot);
-            _bots.Add(new BotController(bot, _rng));
+            // Strategy: the brain (client) picks which movement strategy the controller (context) runs.
+            _bots.Add(new BotBrain(bot, _rng));
             _eventBus.Notify(new PlayerJoinedEvent(bot));
         }
     }
