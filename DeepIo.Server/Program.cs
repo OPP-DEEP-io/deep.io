@@ -8,6 +8,11 @@ if (args.Contains("--patterns-demo", StringComparer.Ordinal))
     return;
 }
 
+// --open-console lets players run console commands on any tank (lab demos); otherwise only
+// the server console may touch tanks other than the caller's own.
+GameWorld.Instance.OpenConsole = args.Contains("--open-console", StringComparer.Ordinal);
+args = args.Where(a => a != "--open-console").ToArray();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSignalR();
@@ -17,6 +22,7 @@ builder.Services.AddSignalR();
 // way of creating an arena.
 builder.Services.AddSingleton(GameWorld.Instance);
 builder.Services.AddHostedService<GameLoop>();    // authoritative tick loop
+builder.Services.AddHostedService<ServerConsoleService>();   // stdin -> console interpreter
 
 var app = builder.Build();
 

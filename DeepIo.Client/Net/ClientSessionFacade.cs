@@ -1,3 +1,4 @@
+using DeepIo.Client.Hud;
 using DeepIo.Shared;
 
 namespace DeepIo.Client.Net;
@@ -8,7 +9,7 @@ public enum ClientSessionState { JoinScreen, Connecting, Playing }
 /// Main-thread entry point for joining and playing. ConnectionAttempt, ActiveSession, and
 /// SnapshotMailbox hide connection lifecycle, reconnection, and callback synchronization.
 /// </summary>
-public sealed class ClientSessionFacade : IAsyncDisposable
+public sealed class ClientSessionFacade : IGameActions, IAsyncDisposable
 {
     private readonly Func<string, IGameConnection> _connectionFactory;
     private readonly SnapshotMailbox _snapshots = new();
@@ -85,7 +86,13 @@ public sealed class ClientSessionFacade : IAsyncDisposable
             _snapshots.Publish(snapshot);
     }
 
-    private void DropActiveConnection(string error)
+    /// <summary>Leaves the arena on purpose (death or Esc): back to the join screen, no error shown.</summary>
+    public void LeaveGame()
+    {
+        if (_active is not null) DropActiveConnection(null);
+    }
+
+    private void DropActiveConnection(string? error)
     {
         ActiveSession active = _active!;
         _active = null;
@@ -102,6 +109,16 @@ public sealed class ClientSessionFacade : IAsyncDisposable
     public void UpgradeStat(StatKind stat) => PlayingSession().UpgradeStat(stat);
 
     public void UndoUpgrade() => PlayingSession().UndoUpgrade();
+
+    /// <summary>Sends one in-game console line; the server interprets it and replies later.</summary>
+    public void ExecuteConsole(string line) => PlayingSession().ExecuteConsole(line);
+
+    /// <summary>Next console reply received from the server, if any.</summary>
+    public bool TryTakeConsoleOutput(out string text)
+    {
+        text = "";
+        return _active is { } active && active.TryTakeConsoleOutput(out text);
+    }
 
     private ActiveSession PlayingSession()
     {

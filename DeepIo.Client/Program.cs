@@ -1,6 +1,13 @@
+using DeepIo.Client.Diagnostics;
 using DeepIo.Client.Net;
 using DeepIo.Client.Rendering;
 using DeepIo.Client.Ui;
+
+if (args.Contains("--hud-demo", StringComparer.Ordinal))
+{
+    HudDemo.Run();
+    return;
+}
 
 const int screenW = 1920;
 const int screenH = 1080;
@@ -42,7 +49,10 @@ try
         ClientSessionState oldState = session.State;
         session.Poll();
         if (oldState == ClientSessionState.Connecting && session.State == ClientSessionState.Playing)
+        {
             Console.WriteLine($"Connected as \"{session.PlayerName}\" — tank id {session.PlayerId}");
+            gameplay = new GameplayController(backend, session);   // fresh HUD for every game
+        }
 
         if (session.State == ClientSessionState.Playing)
             gameplay.RunFrame();

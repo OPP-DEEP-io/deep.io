@@ -77,6 +77,8 @@ internal sealed class ActiveSession : IAsyncDisposable
     public void SendInput(InputMessage input) => Send(() => _connection.SendInputAsync(input), "Input send");
     public void UpgradeStat(StatKind stat) => Send(() => _connection.UpgradeStatAsync(stat), "Upgrade request");
     public void UndoUpgrade() => Send(_connection.UndoUpgradeAsync, "Upgrade request");
+    public void ExecuteConsole(string line) => Send(() => _connection.ExecuteConsoleAsync(line), "Console command");
+    public bool TryTakeConsoleOutput(out string text) => _connection.TryTakeConsoleOutput(out text);
 
     private static void Send(Func<Task> send, string operation)
     {

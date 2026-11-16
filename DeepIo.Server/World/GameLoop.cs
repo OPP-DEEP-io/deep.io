@@ -42,6 +42,15 @@ public sealed class GameLoop : BackgroundService
             try
             {
                 await _hub.Clients.All.SendAsync("Snapshot", snapshot, stoppingToken);
+
+                // Console output goes only to whoever typed the line; server lines go to stdout.
+                while (_world.TryTakeConsoleReply(out ConsoleLine reply))
+                {
+                    if (reply.ConnectionId == GameWorld.ServerConsoleId)
+                        Console.WriteLine(reply.Text);
+                    else
+                        await _hub.Clients.Client(reply.ConnectionId).SendAsync("ConsoleOutput", reply.Text, stoppingToken);
+                }
             }
             catch (OperationCanceledException)
             {

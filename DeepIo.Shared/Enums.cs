@@ -21,6 +21,18 @@ public enum TankArchetype
 }
 
 /// <summary>
+/// Life-cycle phase of a tank (State pattern on the server). Sent in <c>EntityDto.St</c> so the
+/// client can draw the spawn shield, hide dead tanks and show the respawn countdown.
+/// </summary>
+public enum TankLifeState
+{
+    SpawnProtected = 0,
+    Alive = 1,
+    Regenerating = 2,
+    Dead = 3,
+}
+
+/// <summary>
 /// The eight upgradable tank stats. A tank earns one skill point per level and spends it on
 /// one of these (keys 1-8 on the client); each spend is an undoable UpgradeStatCommand on the
 /// server. The numeric values double as the index into <c>EntityDto.Up</c>.

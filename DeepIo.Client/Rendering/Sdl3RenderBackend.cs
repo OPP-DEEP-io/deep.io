@@ -364,6 +364,7 @@ public sealed class Sdl3RenderBackend : IRenderBackend
         ClientKey.Three => SDL.Scancode.Alpha3, ClientKey.Four => SDL.Scancode.Alpha4,
         ClientKey.Five => SDL.Scancode.Alpha5, ClientKey.Six => SDL.Scancode.Alpha6,
         ClientKey.Seven => SDL.Scancode.Alpha7, ClientKey.Eight => SDL.Scancode.Alpha8,
+        ClientKey.Grave => SDL.Scancode.Grave, ClientKey.Escape => SDL.Scancode.Escape,
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
     };
 

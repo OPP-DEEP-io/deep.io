@@ -1,6 +1,8 @@
 using System.Numerics;
 using DeepIo.Server.Commands;
 using DeepIo.Server.Entities.Parts;
+using DeepIo.Server.Entities.States;
+using DeepIo.Server.Events;
 using DeepIo.Server.Prototypes;
 using DeepIo.Shared;
 
@@ -17,6 +19,10 @@ namespace DeepIo.Server.Entities;
 /// Player input and bot AI both reach a tank as commands (<see cref="MoveCommand"/>,
 /// <see cref="RotateCommand"/>, <see cref="FireCommand"/>, <see cref="UpgradeStatCommand"/>)
 /// run through its two <see cref="CommandHistory"/> invokers; the tank is their receiver.
+///
+/// The tank is also the context of the State pattern: whether it can move, fire, take damage
+/// or regenerate depends on its current <see cref="TankState"/> (spawn shield, alive,
+/// regenerating, dead), and the states themselves decide when to move on.
 /// </summary>
 public sealed class Tank : Entity, IPrototype<Tank>
 {
@@ -54,10 +60,44 @@ public sealed class Tank : Entity, IPrototype<Tank>
     /// <summary>Stat upgrades, newest last. <c>UpgradeHistory.Undo()</c> is a one-point respec.</summary>
     public CommandHistory UpgradeHistory { get; private set; } = new(GameConstants.MaxLevel);
 
+    /// <summary>Current life-cycle phase. Every tank starts behind a spawn shield.</summary>
+    public TankState State { get; private set; } = new SpawnProtectedState();
+
+    /// <summary>
+    /// Switches to <paramref name="next"/> and announces it on the event bus. Called by the
+    /// states themselves; nothing outside the tank chooses which state comes next.
+    /// </summary>
+    internal void TransitionTo(TankState next)
+    {
+        TankLifeState from = State.Kind;
+        State = next;
+        next.Enter(this);
+        EventBus?.Notify(new TankStateChangedEvent(this, from, next.Kind));
+    }
+
+    /// <summary>
+    /// Admin kill (console <c>kill</c>): destroys the tank even through its spawn shield.
+    /// Reported like any other death, without a killer. False if it is already dead.
+    /// </summary>
+    public bool ForceKill()
+    {
+        if (State is DeadState) return false;
+
+        Hp = 0f;
+        EventBus?.Notify(new EntityDestroyedEvent(this, null));
+        TransitionTo(new DeadState());
+        return true;
+    }
+
+    protected override float FilterIncomingDamage(float amount) => State.FilterDamage(this, amount);
+
+    protected override void OnKilled() => State.OnKilled(this);
+
     /// <summary>
     /// Shallow copies share mutable stats and histories (demonstration only). Deep copies
     /// own their stat array and fresh histories: commands hold references to their receiver
-    /// and must not be copied to a new tank. Immutable parts and the event bus are shared.
+    /// and must not be copied to a new tank. They also start in a fresh spawn shield, because a
+    /// state object carries its own timer. Immutable parts and the event bus are shared.
     /// Identity is preserved here; the spawn registry assigns a new world id.
     /// </summary>
     public Tank Clone(CopyDepth depth = CopyDepth.Deep)
@@ -70,6 +110,7 @@ public sealed class Tank : Entity, IPrototype<Tank>
             copy.Stats = Stats.DeepCopy();
             copy.InputHistory = new CommandHistory(InputHistory.Capacity);
             copy.UpgradeHistory = new CommandHistory(UpgradeHistory.Capacity);
+            copy.State = new SpawnProtectedState();
         }
         return copy;
     }
@@ -84,19 +125,26 @@ public sealed class Tank : Entity, IPrototype<Tank>
 
     public override void Update(float dt)
     {
-        Velocity = MoveDir * MoveSpeed;
+        Velocity = State.CanMove ? MoveDir * MoveSpeed : Vector2.Zero;
         base.Update(dt);
         Position = ClampToArena(Position, Radius);
 
         ReloadTimer -= dt;
-        if (Hp < MaxHp) Heal(Chassis.RegenPerSecond * Stats.RegenMultiplier * dt);
+        float regen = Chassis.RegenPerSecond * Stats.RegenMultiplier * State.RegenMultiplier;
+        if (Hp < MaxHp && regen > 0f) Heal(regen * dt);
+
+        State.Update(this, dt);
     }
 
-    /// <summary>True when the trigger is held and the barrel has finished reloading.</summary>
-    public bool CanFire => Firing && ReloadTimer <= 0f;
+    /// <summary>True when the state allows shooting, the trigger is held and the barrel has reloaded.</summary>
+    public bool CanFire => State.CanFire && Firing && ReloadTimer <= 0f;
 
     /// <summary>Starts the reload for this tank's barrel. Call once per shot fired.</summary>
-    public void BeginReload() => ReloadTimer = ReloadInterval;
+    public void BeginReload()
+    {
+        ReloadTimer = ReloadInterval;
+        State.OnFired(this);
+    }
 
     /// <summary>Level reached at <paramref name="score"/>: a square-root curve capped at MaxLevel.</summary>
     public static int LevelForScore(int score) =>
@@ -114,6 +162,19 @@ public sealed class Tank : Entity, IPrototype<Tank>
         Level = reached;
         _chassis = ChassisUpgrades.ForLevel(BaseChassis, Level);
         ApplyStats();
+    }
+
+    /// <summary>
+    /// Adds XP and, if that crossed a level threshold, publishes <see cref="PlayerLeveledUpEvent"/>
+    /// so the feed and achievements hear about it. Used for kill bounties and console grants.
+    /// </summary>
+    public void AwardXp(int amount)
+    {
+        int before = Level;
+        AddScore(amount);
+
+        if (Level > before)
+            EventBus?.Notify(new PlayerLeveledUpEvent(this, before, Level));
     }
 
     /// <summary>Receiver side of <see cref="UpgradeStatCommand.Execute"/>.</summary>
@@ -178,5 +239,7 @@ public sealed class Tank : Entity, IPrototype<Tank>
         Up = Stats.ToArray(),
         Ai = AiLabel,
         Mods = Chassis is ChassisDecorator ? Chassis.Name : null,
+        St = (int)State.Kind,
+        StT = State.SecondsLeft,
     };
 }

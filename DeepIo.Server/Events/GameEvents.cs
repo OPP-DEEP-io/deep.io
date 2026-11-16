@@ -1,4 +1,5 @@
 using DeepIo.Server.Entities;
+using DeepIo.Shared;
 
 namespace DeepIo.Server.Events;
 
@@ -22,6 +23,9 @@ public sealed record PlayerJoinedEvent(Tank Tank) : GameEvent;
 
 /// <summary>Raised when a human's connection drops and their tank is removed.</summary>
 public sealed record PlayerLeftEvent(Tank Tank) : GameEvent;
+
+/// <summary>Raised by <see cref="Tank.TransitionTo"/> every time a tank changes life-cycle state.</summary>
+public sealed record TankStateChangedEvent(Tank Tank, TankLifeState From, TankLifeState To) : GameEvent;
 
 /// <summary>Raised by <c>AchievementObserver</c> the first time a tank earns an achievement.</summary>
 public sealed record AchievementUnlockedEvent(Tank Tank, string Title) : GameEvent;
