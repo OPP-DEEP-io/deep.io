@@ -14,5 +14,9 @@ public interface IGameConnection : IAsyncDisposable
     Task SendInputAsync(InputMessage input);
     Task UpgradeStatAsync(StatKind stat);
     Task UndoUpgradeAsync();
+    Task ExecuteConsoleAsync(string line);
     Snapshot? TakeLatest();
+
+    /// <summary>Next console reply from the server, oldest first.</summary>
+    bool TryTakeConsoleOutput(out string text);
 }

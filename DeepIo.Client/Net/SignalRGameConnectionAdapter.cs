@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DeepIo.Shared;
 using Microsoft.AspNetCore.SignalR.Client;
 
@@ -13,6 +14,7 @@ public sealed class SignalRGameConnectionAdapter : IGameConnection
 {
     private readonly HubConnection _conn;
     private readonly SnapshotMailbox _snapshots = new();
+    private readonly ConcurrentQueue<string> _consoleOutput = new();   // every reply matters, unlike snapshots
 
     public event Action? Reconnecting;
     public event Func<Task>? Reconnected;
@@ -26,6 +28,7 @@ public sealed class SignalRGameConnectionAdapter : IGameConnection
             .Build();
 
         _conn.On<Snapshot>("Snapshot", _snapshots.Publish);
+        _conn.On<string>("ConsoleOutput", _consoleOutput.Enqueue);
         _conn.Reconnecting += _ =>
         {
             Reconnecting?.Invoke();
@@ -56,6 +59,10 @@ public sealed class SignalRGameConnectionAdapter : IGameConnection
     public Task UpgradeStatAsync(StatKind stat) => _conn.SendAsync("UpgradeStat", stat);
 
     public Task UndoUpgradeAsync() => _conn.SendAsync("UndoUpgrade");
+
+    public Task ExecuteConsoleAsync(string line) => _conn.SendAsync("ExecuteConsole", line);
+
+    public bool TryTakeConsoleOutput(out string text) => _consoleOutput.TryDequeue(out text!);
 
     /// <summary>
     /// Returns and clears the most recent snapshot.

@@ -17,30 +17,38 @@ public enum ClientKey
 {
     W, A, S, D, Space, Left, Right, Up, Down, Home, End, Tab, Backspace, Delete, Enter,
     One, Two, Three, Four, Five, Six, Seven, Eight,   // stat upgrades
+    Grave, Escape,                                    // in-game console
 }
 
 public enum RenderTextStyle { Ui, Title }
 
-/// <summary>Client rendering, window, and input operations supplied by platform backend.</summary>
-public interface IRenderBackend
+/// <summary>Keyboard and mouse state for one frame. Split out so HUD logic can be driven by a fake.</summary>
+public interface IInputSource
 {
-    int ScreenWidth { get; }
-    int ScreenHeight { get; }
-    int Fps { get; }
-    float FrameTime { get; }
-    double Time { get; }
     Vector2 MousePosition { get; }
-
-    void OpenWindow(int width, int height, string title, int targetFps);
-    bool WindowShouldClose();
-    void CloseWindow();
 
     bool IsKeyDown(ClientKey key);
     bool IsKeyPressed(ClientKey key);
     bool IsKeyPressedRepeat(ClientKey key);
     bool IsPrimaryMouseButtonDown();
     bool IsPrimaryMouseButtonPressed();
+
+    /// <summary>Next typed character (Unicode code point) this frame, or 0 when none is left.</summary>
     int GetCharPressed();
+}
+
+/// <summary>Client rendering, window, and input operations supplied by platform backend.</summary>
+public interface IRenderBackend : IInputSource
+{
+    int ScreenWidth { get; }
+    int ScreenHeight { get; }
+    int Fps { get; }
+    float FrameTime { get; }
+    double Time { get; }
+
+    void OpenWindow(int width, int height, string title, int targetFps);
+    bool WindowShouldClose();
+    void CloseWindow();
 
     void BeginFrame();
     void EndFrame();

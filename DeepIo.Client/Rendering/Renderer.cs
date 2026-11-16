@@ -7,7 +7,7 @@ namespace DeepIo.Client.Rendering;
 /// Gameplay rendering abstraction in the Bridge. Draws snapshots through an independent
 /// primitive backend; camera transforms and draw order remain here.
 /// </summary>
-public readonly record struct GameplayFrame(Snapshot? Snapshot, Camera Camera, int PlayerId);
+public readonly record struct GameplayFrame(Snapshot? Snapshot, Camera Camera, int PlayerId, Action? DrawOverlay = null);
 
 public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>(backend)
 {
@@ -22,6 +22,8 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
     private static readonly RenderColor EnemyColor = new(230, 110, 110, 255);
     private static readonly RenderColor HpBack = new(60, 60, 60, 255);
     private static readonly RenderColor HpFront = new(90, 220, 120, 255);
+    private static readonly RenderColor HpRegen = new(120, 230, 230, 255);
+    private static readonly RenderColor ShieldColor = new(120, 190, 250, 70);
     private static readonly RenderColor Faint = new(150, 150, 160, 255);
     private static readonly RenderColor Dim = new(110, 110, 122, 255);
     private static readonly RenderColor PipEmpty = new(60, 62, 74, 255);
@@ -50,7 +52,8 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
             // Draw order: shapes, then bullets, then tanks on top.
             foreach (var e in snap.Entities) if (e.Kind == "shape") DrawShape(e, cam);
             foreach (var e in snap.Entities) if (e.Kind == "bullet") DrawBullet(e, cam);
-            foreach (var e in snap.Entities) if (e.Kind == "tank") DrawTank(e, cam, myId);
+            foreach (var e in snap.Entities)
+                if (e.Kind == "tank" && (TankLifeState)e.St != TankLifeState.Dead) DrawTank(e, cam, myId);
 
             DrawHud(snap);
             DrawFeed(snap);
@@ -61,6 +64,7 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
             Backend.DrawText("Connecting to server...", 20, 60, 26, RenderColor.White);
         }
 
+        frame.DrawOverlay?.Invoke();   // HUD overlays (console, death screen) on top of everything
         DrawFps();
         Backend.EndFrame();
     }
@@ -134,6 +138,10 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
         float wid = r * widScale;
         Backend.DrawRotatedRectangle(pos, len, wid, e.Rot * Rad2Deg, BarrelColor);
 
+        // Spawn shield: a translucent halo while the tank cannot be damaged.
+        if ((TankLifeState)e.St == TankLifeState.SpawnProtected)
+            Backend.DrawCircle(pos, r * 1.35f, ShieldColor);
+
         // Body.
         Backend.DrawCircle(pos, r, e.Id == myId ? SelfColor : EnemyColor);
 
@@ -153,10 +161,13 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
             Backend.DrawText(ai, (int)(pos.X - w * 0.5f), (int)(pos.Y + r + 16f), 15, Faint);
         }
 
-        DrawHpBar(pos, r, e.Hp, e.MaxHp);
+        DrawHpBar(pos, r, e.Hp, e.MaxHp, (TankLifeState)e.St == TankLifeState.Regenerating ? HpRegen : HpFront);
     }
 
-    private void DrawHpBar(Vector2 pos, float radius, float hp, float maxHp)
+    private void DrawHpBar(Vector2 pos, float radius, float hp, float maxHp) =>
+        DrawHpBar(pos, radius, hp, maxHp, HpFront);
+
+    private void DrawHpBar(Vector2 pos, float radius, float hp, float maxHp, RenderColor fill)
     {
         if (maxHp <= 0f || hp >= maxHp) return;
         float frac = Math.Clamp(hp / maxHp, 0f, 1f);
@@ -164,12 +175,12 @@ public sealed class Renderer(IRenderBackend backend) : ClientView<GameplayFrame>
         var left = new Vector2(pos.X - radius, y);
         var right = new Vector2(pos.X + radius, y);
         Backend.DrawLine(left, right, 4f, HpBack);
-        Backend.DrawLine(left, new Vector2(left.X + (radius * 2f) * frac, y), 4f, HpFront);
+        Backend.DrawLine(left, new Vector2(left.X + (radius * 2f) * frac, y), 4f, fill);
     }
 
     private void DrawHud(Snapshot snap)
     {
-        Backend.DrawText("WASD move   |   mouse aim   |   left click / space to fire   |   1-8 upgrade   |   Backspace undo upgrade", 20, 20, 19, Faint);
+        Backend.DrawText("WASD move   |   mouse aim   |   left click / space to fire   |   1-8 upgrade   |   Backspace undo upgrade   |   ` console   |   Esc leave", 20, 20, 19, Faint);
         Backend.DrawText($"tick {snap.Tick}", 20, 46, 17, Dim);
 
         int x = 20, y = 78;

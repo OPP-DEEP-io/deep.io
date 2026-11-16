@@ -44,7 +44,7 @@ public sealed class BotContext
         float enemyDist = float.PositiveInfinity;
         foreach (Tank t in tanks)
         {
-            if (t == self || t.Dead) continue;
+            if (t == self || !t.State.IsTargetable) continue;   // dead or behind a spawn shield
             float d = Vector2.Distance(self.Position, t.Position);
             if (d < enemyDist) (enemy, enemyDist) = (t, d);
         }

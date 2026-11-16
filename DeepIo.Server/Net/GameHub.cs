@@ -37,6 +37,18 @@ public sealed class GameHub : Hub
     /// <summary>Undoes this player's most recent upgrade and refunds the point.</summary>
     public void UndoUpgrade() => _world.EnqueueUndoUpgrade(Context.ConnectionId);
 
+    public const int MaxConsoleLine = 200;
+
+    /// <summary>
+    /// Runs one in-game console line. It is interpreted on the next tick and the output comes
+    /// back to this connection only, as "ConsoleOutput".
+    /// </summary>
+    public void ExecuteConsole(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line) || line.Length > MaxConsoleLine) return;
+        _world.EnqueueConsole(Context.ConnectionId, line);
+    }
+
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _world.EnqueueLeave(Context.ConnectionId);

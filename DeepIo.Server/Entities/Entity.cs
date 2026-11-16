@@ -44,14 +44,23 @@ public abstract class Entity
     public bool ApplyDamage(float amount, Entity? attacker = null)
     {
         if (Dead) return false;
+        amount = FilterIncomingDamage(amount);
+        if (amount <= 0f) return false;
         Hp -= amount;
 
         EventBus?.Notify(new EntityDamagedEvent(this, attacker, amount));
         if (!Dead) return false;
 
         EventBus?.Notify(new EntityDestroyedEvent(this, attacker));
+        OnKilled();
         return true;
     }
+
+    /// <summary>How much of an incoming hit lands. Default: all of it.</summary>
+    protected virtual float FilterIncomingDamage(float amount) => amount;
+
+    /// <summary>Runs after the killing blow has been reported to observers.</summary>
+    protected virtual void OnKilled() { }
 
     public void Heal(float amount) => Hp = MathF.Min(MaxHp, Hp + amount);
 

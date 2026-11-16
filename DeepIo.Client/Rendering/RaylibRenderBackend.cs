@@ -20,6 +20,7 @@ public sealed class RaylibRenderBackend : IRenderBackend
         Raylib.SetTraceLogLevel(TraceLogLevel.Warning);
         Raylib.InitWindow(width, height, title);
         Raylib.SetTargetFPS(targetFps);
+        Raylib.SetExitKey(KeyboardKey.Null);   // Esc closes the in-game console, not the window
 
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "OpenSans-Regular.ttf");
         if (!File.Exists(fontPath))
@@ -106,6 +107,8 @@ public sealed class RaylibRenderBackend : IRenderBackend
         ClientKey.Six => KeyboardKey.Six,
         ClientKey.Seven => KeyboardKey.Seven,
         ClientKey.Eight => KeyboardKey.Eight,
+        ClientKey.Grave => KeyboardKey.Grave,
+        ClientKey.Escape => KeyboardKey.Escape,
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
     };
 }

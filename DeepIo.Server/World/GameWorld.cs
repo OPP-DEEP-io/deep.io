@@ -8,6 +8,7 @@ using DeepIo.Server.Events;
 using DeepIo.Server.Events.Observers;
 using DeepIo.Server.Factories;
 using DeepIo.Server.Prototypes;
+using DeepIo.Server.Scripting;
 using DeepIo.Shared;
 
 namespace DeepIo.Server.World;
@@ -28,7 +29,7 @@ namespace DeepIo.Server.World;
 /// inboxes (join / leave / input). ALL mutation of the entity dictionary happens on the
 /// game-loop thread inside <see cref="Update"/>, so no locks are needed on the hot path.
 /// </summary>
-public sealed class GameWorld
+public sealed class GameWorld : IConsoleWorld
 {
     private static readonly Lazy<GameWorld> LazyInstance =
         new(static () => new GameWorld(), LazyThreadSafetyMode.ExecutionAndPublication);
@@ -44,6 +45,12 @@ public sealed class GameWorld
     private readonly ConcurrentQueue<string> _pendingLeaves = new();
     private readonly ConcurrentDictionary<string, InputMessage> _inputs = new();
     private readonly ConcurrentQueue<UpgradeRequest> _pendingUpgrades = new();
+    private readonly ConcurrentQueue<ConsoleLine> _pendingConsole = new();
+
+    // Interpreter: console lines are parsed and interpreted on the game-loop thread; the
+    // replies wait here until the GameLoop sends them back to whoever typed the line.
+    private readonly ConsoleInterpreter _console = new();
+    private readonly ConcurrentQueue<ConsoleLine> _consoleReplies = new();
 
     // Object creation is delegated to the factories; the world never news up a Shape or Tank.
     private readonly ShapeSpawner _shapeSpawner = new();
@@ -61,6 +68,7 @@ public sealed class GameWorld
     // Strategy: one controller per bot, each swapping movement strategies at runtime.
     private static readonly string[] BotNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta", "Bot Echo", "Bot Foxtrot"];
     private readonly List<BotBrain> _bots = new();
+    private int _targetBotCount = GameConstants.BotCount;
     private readonly List<Tank> _tankView = new();
     private readonly List<Shape> _shapeView = new();
 
@@ -75,7 +83,7 @@ public sealed class GameWorld
         // The feed goes first: observers below publish follow-up events (level-ups,
         // achievements) mid-notification, and the feed should list the cause before them.
         _eventBus.Attach(_feed);
-        _eventBus.Attach(new XpAwardObserver(_eventBus));
+        _eventBus.Attach(new XpAwardObserver());
         _eventBus.Attach(_leaderboard);
         _eventBus.Attach(new AchievementObserver(_eventBus));
     }
@@ -91,6 +99,12 @@ public sealed class GameWorld
 
     public int NextId() => Interlocked.Increment(ref _nextId);
 
+    /// <summary>Connection id used for lines typed on the server's own stdin console.</summary>
+    public const string ServerConsoleId = "server-console";
+
+    /// <summary>When true (--open-console), players may run console commands on any tank, not just their own.</summary>
+    public bool OpenConsole { get; set; }
+
     // ---- Called from the SignalR hub (background threads) -------------------------------
 
     /// <summary>
@@ -99,7 +113,7 @@ public sealed class GameWorld
     /// </summary>
     public Tank CreateTankForConnection(string connectionId, string name, TankArchetype archetype)
     {
-        Tank tank = _tankAssembler.Assemble(NextId(), connectionId, name, archetype, RandomPoint(Random.Shared));
+        Tank tank = _tankAssembler.Assemble(NextId(), connectionId, name, archetype, SpawnPoints.Random(Random.Shared));
         _pendingJoins.Enqueue(tank);
         return tank;
     }
@@ -116,6 +130,13 @@ public sealed class GameWorld
     public void EnqueueUndoUpgrade(string connectionId) =>
         _pendingUpgrades.Enqueue(new UpgradeRequest(connectionId, null));
 
+    /// <summary>Queues a console line; it is interpreted on the next tick.</summary>
+    public void EnqueueConsole(string connectionId, string line) =>
+        _pendingConsole.Enqueue(new ConsoleLine(connectionId, line));
+
+    /// <summary>Takes the next console reply for the game loop to deliver.</summary>
+    public bool TryTakeConsoleReply(out ConsoleLine reply) => _consoleReplies.TryDequeue(out reply);
+
     // ---- Called from the game loop thread only -----------------------------------------
 
     public void Update(float dt)
@@ -127,6 +148,7 @@ public sealed class GameWorld
         DrainLeaves();
         ApplyInputs();
         DrainUpgrades();
+        DrainConsole();
         UpdateBots(dt);
         Integrate(dt);
         FireWeapons();
@@ -210,6 +232,32 @@ public sealed class GameWorld
         }
     }
 
+    private void DrainConsole()
+    {
+        while (_pendingConsole.TryDequeue(out var request))
+        {
+            bool server = request.ConnectionId == ServerConsoleId;
+            Tank? caller = null;
+            if (!server && _connectionToTank.TryGetValue(request.ConnectionId, out var id))
+                caller = _entities.GetValueOrDefault(id) as Tank;
+            if (!server && caller is null) continue;   // left before the line was run
+
+            var context = new ConsoleContext(this, caller, isAdmin: server || OpenConsole);
+            string output = _console.Execute(request.Text, context);
+            _consoleReplies.Enqueue(new ConsoleLine(request.ConnectionId, output));
+        }
+    }
+
+    // ---- IConsoleWorld (used by console expressions, on the game-loop thread) -----------
+
+    IReadOnlyList<Tank> IConsoleWorld.Tanks => _entities.Values.OfType<Tank>().ToList();
+
+    bool IConsoleWorld.IsBot(Tank tank) => _bots.Any(b => b.Tank == tank);
+
+    int IConsoleWorld.BotCount => _targetBotCount;
+
+    void IConsoleWorld.SetBotCount(int count) => _targetBotCount = Math.Max(0, count);
+
     private void UpdateBots(float dt)
     {
         if (_bots.Count == 0) return;
@@ -258,6 +306,7 @@ public sealed class GameWorld
     // Damage only; XP for kills is paid by XpAwardObserver when the victim reports its death.
     private void ResolveCollisions(float dt) => _collisions.Resolve(_entities, dt);
 
+    // Dead tanks stay: their DeadState counts down and respawns them (State pattern).
     private void Cleanup()
     {
         List<int>? remove = null;
@@ -272,10 +321,6 @@ public sealed class GameWorld
 
                 case Shape s when s.Dead:
                     (remove ??= new List<int>()).Add(s.Id);
-                    break;
-
-                case Tank t when t.Dead:
-                    t.Respawn(RandomPoint(_rng));
                     break;
             }
         }
@@ -293,22 +338,32 @@ public sealed class GameWorld
         for (; count < GameConstants.TargetShapeCount; count++)
         {
             // Factory Method: which polygon subclass gets allocated is the creators' business.
-            Shape shape = _shapeSpawner.Spawn(NextId(), RandomPoint(_rng), _rng);
+            Shape shape = _shapeSpawner.Spawn(NextId(), SpawnPoints.Random(_rng), _rng);
             Add(shape);
         }
     }
 
     private void MaintainBots()
     {
-        while (_bots.Count < GameConstants.BotCount)
+        while (_bots.Count > _targetBotCount)
+        {
+            BotBrain last = _bots[^1];
+            _bots.RemoveAt(_bots.Count - 1);
+            _entities.Remove(last.Tank.Id);
+            _eventBus.Notify(new PlayerLeftEvent(last.Tank));
+        }
+
+        while (_bots.Count < _targetBotCount)
         {
             // Prototype: copy a bot configured once by Builder + Abstract Factory.
             var archetypes = Enum.GetValues<TankArchetype>();
             TankArchetype archetype = archetypes[_rng.Next(archetypes.Length)];
             int id = NextId();
-            string name = BotNames[_bots.Count % BotNames.Length];
+            string name = _bots.Count < BotNames.Length
+                ? BotNames[_bots.Count]
+                : $"{BotNames[_bots.Count % BotNames.Length]} {_bots.Count / BotNames.Length + 1}";
 
-            Tank bot = _botPrototypes.Spawn(id, name, archetype, RandomPoint(_rng));
+            Tank bot = _botPrototypes.Spawn(id, name, archetype, SpawnPoints.Random(_rng));
             Add(bot);
             // Strategy: the brain (client) picks which movement strategy the controller (context) runs.
             _bots.Add(new BotBrain(bot, _rng));
@@ -316,14 +371,9 @@ public sealed class GameWorld
         }
     }
 
-    private static Vector2 RandomPoint(Random rng)
-    {
-        float half = GameConstants.ArenaSize * 0.5f - 40f;
-        return new Vector2(
-            (float)(rng.NextDouble() * 2 - 1) * half,
-            (float)(rng.NextDouble() * 2 - 1) * half);
-    }
-
     /// <summary>A spend (<see cref="Stat"/> set) or an undo (<see cref="Stat"/> null) from one connection.</summary>
     private readonly record struct UpgradeRequest(string ConnectionId, StatKind? Stat);
 }
+
+/// <summary>A console line (on the way in) or its output (on the way out) for one connection.</summary>
+public readonly record struct ConsoleLine(string ConnectionId, string Text);

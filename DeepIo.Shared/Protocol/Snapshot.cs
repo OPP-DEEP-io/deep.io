@@ -52,6 +52,12 @@ public sealed record EntityDto
 
     /// <summary>Active chassis decoration chain (tanks only); null below level five.</summary>
     public string? Mods { get; init; }
+
+    /// <summary>TankLifeState as int (tanks only).</summary>
+    public int St { get; init; }
+
+    /// <summary>Seconds left in a timed state: spawn shield or respawn countdown (tanks only).</summary>
+    public float StT { get; init; }
 }
 
 public sealed record LeaderboardEntry
