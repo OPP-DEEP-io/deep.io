@@ -60,5 +60,5 @@ public sealed class Bullet : Entity
         Life -= dt;
     }
 
-    public override EntityDto ToDto() => base.ToDto() with { Owner = OwnerId };
+    protected override EntityDto CreateSnapshot() => new() { Owner = OwnerId };
 }

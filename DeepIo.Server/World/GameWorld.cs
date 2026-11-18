@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Numerics;
 using DeepIo.Server.Ai;
 using DeepIo.Server.Combat;
 using DeepIo.Server.Commands;
@@ -208,13 +207,8 @@ public sealed class GameWorld : IConsoleWorld
         foreach (var (conn, id) in _connectionToTank)
         {
             if (!_entities.TryGetValue(id, out var e) || e is not Tank tank) continue;
-            if (!_inputs.TryGetValue(conn, out var input) || input.Seq == tank.LastInputSeq) continue;
-
-            // Command: each new input message becomes the same three commands a bot issues.
-            tank.LastInputSeq = input.Seq;
-            tank.InputHistory.Execute(new MoveCommand(tank, new Vector2(input.MoveX, input.MoveY)));
-            tank.InputHistory.Execute(new RotateCommand(tank, input.Aim));
-            tank.InputHistory.Execute(new FireCommand(tank, input.Fire));
+            if (_inputs.TryGetValue(conn, out var input))
+                PlayerInputChain.Apply(tank, input);
         }
     }
 

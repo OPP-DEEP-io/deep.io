@@ -30,8 +30,90 @@ public static class PatternDemo
         DemonstratePrototype(assembler);
         DemonstrateState(assembler);
         DemonstrateInterpreter(assembler);
+        DemonstrateSnapshots(assembler);
+        DemonstrateInputChain(assembler);
+        DemonstrateUpgradeUndo(assembler);
         Console.WriteLine();
         Console.WriteLine($"All {_checks} checks passed.");
+    }
+
+    private static void DemonstrateSnapshots(TankAssembler assembler)
+    {
+        Console.WriteLine("TEMPLATE METHOD: common snapshot fields plus entity-specific fields");
+        Tank tank = assembler.Assemble(50, "snapshot", "Snapshot", TankArchetype.Sniper, new Vector2(12f, 34f));
+        Bullet bullet = Bullet.FromSpec(51, tank, 0f);
+        Shape shape = new PentagonFactory().Create(52, new Vector2(56f, 78f), new Random(1));
+
+        foreach (Entity entity in new Entity[] { tank, bullet, shape })
+        {
+            EntityDto dto = entity.ToDto();
+            Check(dto.Id == entity.Id && dto.Kind == entity.Kind &&
+                  dto.X == entity.Position.X && dto.Y == entity.Position.Y &&
+                  dto.Hp == entity.Hp && dto.MaxHp == entity.MaxHp && dto.R == entity.Radius,
+                $"The template sets common fields for {entity.Kind}");
+        }
+
+        EntityDto tankDto = tank.ToDto();
+        Check(tankDto.Name == tank.Name && tankDto.Arch == (int)tank.Archetype && tankDto.Up is not null,
+            "The tank snapshot includes its build and upgrades");
+        Check(bullet.ToDto().Owner == tank.Id, "The bullet snapshot includes its owner");
+        EntityDto shapeDto = shape.ToDto();
+        Check(shapeDto.Shape == (int)ShapeKind.Pentagon && shapeDto.Rot == shape.Rotation,
+            "The shape snapshot includes its polygon and spin");
+    }
+
+    private static void DemonstrateInputChain(TankAssembler assembler)
+    {
+        Console.WriteLine("CHAIN OF RESPONSIBILITY: sequence, movement, aim, trigger");
+        Tank tank = assembler.Assemble(53, "input", "Input", TankArchetype.Basic, Vector2.Zero);
+        var input = new InputMessage { Seq = 1, MoveY = 1f, Aim = 1f, Fire = true };
+        PlayerInputChain.Apply(tank, input);
+        Check(tank.LastInputSeq == 1 && tank.MoveDir == Vector2.UnitY &&
+              tank.Aim == 1f && tank.Firing && tank.InputHistory.Count == 3,
+            "All four handlers process new input");
+
+        PlayerInputChain.Apply(tank, input with { MoveY = 0f, Aim = 0f, Fire = false });
+        Check(tank.MoveDir == Vector2.UnitY && tank.Aim == 1f && tank.Firing && tank.InputHistory.Count == 3,
+            "The sequence handler stops a duplicate before it changes the tank");
+    }
+
+    private static void DemonstrateUpgradeUndo(TankAssembler assembler)
+    {
+        Console.WriteLine("MEMENTO: undo restores only the upgrade");
+        Tank tank = assembler.Assemble(54, "undo", "Undo", TankArchetype.Basic, Vector2.Zero);
+        tank.AddScore(15);
+        float baseHp = tank.MaxHp;
+        var command = new UpgradeStatCommand(tank, StatKind.MaxHealth);
+        Check(tank.UpgradeHistory.Execute(command) && tank.MaxHp > baseHp && tank.SkillPoints == 0,
+            "A successful upgrade creates an undo entry");
+        Check(!tank.UpgradeHistory.Execute(new UpgradeStatCommand(tank, StatKind.MaxHealth)) &&
+              tank.UpgradeHistory.Count == 1, "A failed upgrade creates no undo entry");
+
+        tank.AddScore(225);
+        float chassisHp = tank.Chassis.MaxHp;
+        tank.Hp = tank.MaxHp * 0.5f;
+        Check(tank.UpgradeHistory.Undo() && tank.Stats[StatKind.MaxHealth] == 0 &&
+              tank.SkillPoints == tank.Level - 1 && tank.Score == 240 &&
+              tank.MaxHp == chassisHp && tank.Hp == chassisHp * 0.5f,
+            "Undo preserves earned XP, chassis perks and the current HP fraction");
+        command.Undo();
+        Check(tank.SkillPoints == tank.Level - 1, "A command cannot refund the same point twice");
+
+        Tank.IUpgradeMemento before = tank.UpgradeWithMemento(StatKind.Reload)!;
+        Tank other = assembler.AssembleBot(55, "other", "Other", TankArchetype.Basic, Vector2.Zero);
+        other.RestoreUpgrade(before);
+        Check(other.Stats[StatKind.Reload] == 1, "A different tank cannot restore the memento");
+
+        Tank.IUpgradeMemento spent = tank.UpgradeWithMemento(StatKind.BulletSpeed)!;
+        tank.RestoreUpgrade(spent);
+        tank.UpgradeWithMemento(StatKind.BulletSpeed);
+        tank.RestoreUpgrade(spent);
+        Check(tank.Stats[StatKind.BulletSpeed] == 1, "A used memento cannot restore a later upgrade");
+
+        tank.Respawn(Vector2.Zero);
+        tank.UpgradeHistory.Execute(new UpgradeStatCommand(tank, StatKind.Reload));
+        tank.RestoreUpgrade(before);
+        Check(tank.Stats[StatKind.Reload] == 1, "A memento from before respawn cannot restore a new upgrade");
     }
 
     private static void DemonstrateState(TankAssembler assembler)

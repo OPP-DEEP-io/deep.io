@@ -24,7 +24,7 @@ public abstract class Shape : Entity
 
     public override void Update(float dt) => Rotation += SpinSpeed * dt;
 
-    public override EntityDto ToDto() => base.ToDto() with
+    protected sealed override EntityDto CreateSnapshot() => new()
     {
         Rot = Rotation,
         Shape = (int)PolygonKind,

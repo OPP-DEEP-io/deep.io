@@ -7,8 +7,8 @@ namespace DeepIo.Server.Entities;
 /// <summary>
 /// Base class for everything that lives in the arena.
 ///
-/// Subclasses own their per-tick behaviour (<see cref="Update"/>) and their wire format
-/// (<see cref="ToDto"/>), so <c>GameWorld</c> never has to switch on the concrete type.
+/// Subclasses own their per-tick behaviour (<see cref="Update"/>) and supply
+/// their type-specific snapshot fields through <see cref="CreateSnapshot"/>.
 /// </summary>
 public abstract class Entity
 {
@@ -66,8 +66,8 @@ public abstract class Entity
 
     public void Kill() => Hp = 0f;
 
-    /// <summary>Projects this entity into the flat snapshot DTO sent to clients.</summary>
-    public virtual EntityDto ToDto() => new()
+    /// <summary>Template Method: projects type-specific fields, then fills in the common fields.</summary>
+    public EntityDto ToDto() => CreateSnapshot() with
     {
         Id = Id,
         Kind = Kind,
@@ -77,6 +77,9 @@ public abstract class Entity
         Hp = Hp,
         MaxHp = MaxHp,
     };
+
+    /// <summary>Creates the type-specific part of a snapshot; ToDto fills in the common fields.</summary>
+    protected abstract EntityDto CreateSnapshot();
 
     protected static Vector2 ClampToArena(Vector2 p, float radius)
     {

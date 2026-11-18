@@ -31,12 +31,7 @@ public sealed class TankStats
         _levels[(int)stat]++;
     }
 
-    public void Decrease(StatKind stat)
-    {
-        if (_levels[(int)stat] == 0)
-            throw new InvalidOperationException($"{stat} has no points to take back.");
-        _levels[(int)stat]--;
-    }
+    internal void RestoreLevel(StatKind stat, int level) => _levels[(int)stat] = level;
 
     public void Reset() => Array.Clear(_levels);
 

@@ -11,6 +11,7 @@ public sealed class UpgradeStatCommand : ICommand
 {
     private readonly Tank _tank;
     private readonly StatKind _stat;
+    private Tank.IUpgradeMemento? _before;
 
     public UpgradeStatCommand(Tank tank, StatKind stat)
     {
@@ -21,7 +22,19 @@ public sealed class UpgradeStatCommand : ICommand
     public StatKind Stat => _stat;
 
     /// <returns>False if the tank has no points left or the stat is already maxed.</returns>
-    public bool Execute() => _tank.TrySpendPoint(_stat);
+    public bool Execute()
+    {
+        if (_before is not null) return false;
 
-    public void Undo() => _tank.RefundPoint(_stat);
+        _before = _tank.UpgradeWithMemento(_stat);
+        return _before is not null;
+    }
+
+    public void Undo()
+    {
+        if (_before is null) return;
+
+        _tank.RestoreUpgrade(_before);
+        _before = null;
+    }
 }

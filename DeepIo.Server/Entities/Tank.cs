@@ -27,6 +27,7 @@ namespace DeepIo.Server.Entities;
 public sealed class Tank : Entity, IPrototype<Tank>
 {
     private const int InputHistorySize = 64;
+    private int _life;
 
     public required IChassis BaseChassis { get; init; }
     private IChassis? _chassis;
@@ -177,24 +178,56 @@ public sealed class Tank : Entity, IPrototype<Tank>
             EventBus?.Notify(new PlayerLeveledUpEvent(this, before, Level));
     }
 
-    /// <summary>Receiver side of <see cref="UpgradeStatCommand.Execute"/>.</summary>
     /// <returns>False if there is no point to spend or the stat is maxed.</returns>
     public bool TrySpendPoint(StatKind stat)
     {
-        if (SkillPoints <= 0 || !Stats.CanIncrease(stat)) return false;
+        if (!CanSpendPoint(stat)) return false;
 
-        SkillPoints--;
-        Stats.Increase(stat);
-        ApplyStats();
+        SpendPoint(stat);
         return true;
     }
 
-    /// <summary>Receiver side of <see cref="UpgradeStatCommand.Undo"/>: takes the point back and refunds it.</summary>
-    public void RefundPoint(StatKind stat)
+    private bool CanSpendPoint(StatKind stat) => SkillPoints > 0 && Stats.CanIncrease(stat);
+
+    private void SpendPoint(StatKind stat)
     {
-        Stats.Decrease(stat);
+        SkillPoints--;
+        Stats.Increase(stat);
+        ApplyStats();
+    }
+
+    internal IUpgradeMemento? UpgradeWithMemento(StatKind stat)
+    {
+        if (!CanSpendPoint(stat)) return null;
+
+        var before = new UpgradeMemento(this, _life, stat, Stats[stat]);
+        SpendPoint(stat);
+        return before;
+    }
+
+    internal void RestoreUpgrade(IUpgradeMemento memento)
+    {
+        if (memento is not UpgradeMemento before || before.Owner != this ||
+            before.Life != _life || before.Restored || Stats[before.Stat] != before.Level + 1)
+            return;
+
+        Stats.RestoreLevel(before.Stat, before.Level);
+        // Refund only this spend so points earned since the upgrade are preserved.
         SkillPoints++;
         ApplyStats();
+        before.Restored = true;
+    }
+
+    // The caretaker holds only this opaque handle. Snapshot data stays inside the tank.
+    internal interface IUpgradeMemento { }
+
+    private sealed class UpgradeMemento(Tank owner, int life, StatKind stat, int level) : IUpgradeMemento
+    {
+        public Tank Owner { get; } = owner;
+        public int Life { get; } = life;
+        public StatKind Stat { get; } = stat;
+        public int Level { get; } = level;
+        public bool Restored { get; set; }
     }
 
     /// <summary>
@@ -203,6 +236,7 @@ public sealed class Tank : Entity, IPrototype<Tank>
     /// </summary>
     public void Respawn(Vector2 position)
     {
+        _life++;
         Score = Math.Max(0, Score / 2);
         Level = LevelForScore(Score);
         SkillPoints = Level - 1;
@@ -228,7 +262,7 @@ public sealed class Tank : Entity, IPrototype<Tank>
         Hp = fraction * MaxHp;
     }
 
-    public override EntityDto ToDto() => base.ToDto() with
+    protected override EntityDto CreateSnapshot() => new()
     {
         Rot = Aim,
         Team = Team,
